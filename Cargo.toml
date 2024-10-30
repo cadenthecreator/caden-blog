@@ -1,0 +1,11 @@
+[package]
+name = "caden-blog"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+axum = "0.7.7"
+maud = "0.26.0"
+tokio = { version = "1.41.0", features = ["rt-multi-thread"] }
+serde = { version = "1.0.214", features = ["derive"] }
+tower = "0.5.1"
