@@ -93,7 +93,10 @@ fn deserialize_post(json_data: &str,url_name: &str) -> Post {
 
 #[tokio::main]
 async fn main() {
-    let app = Router::new().route("/", get(handler)).route("/post/:url_name", get(post_handler));
+    let app = Router::new()
+        .route("/", get(handler))
+        .route("/contact", get(contact))
+        .route("/post/:url_name", get(post_handler));
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await.unwrap();
     println!("Listening to {}", listener.local_addr().unwrap());
@@ -123,15 +126,7 @@ fn get_from_file(file_name: &str) -> Option<Post> {
     }
 }
 
-async fn handler() -> Html<String> {
-    let mut posts: Vec<Post> = vec![];
-    for file in list_files_in_directory("./caden-blog/posts") {
-        posts.push(get_from_file(&file).unwrap());
-        //println!("{}", file);
-    }
-    // for post in &posts {
-    //     println!("{}", serialize_post(&post));
-    // }
+async fn contact() -> Html<String> {
     Html(html! {
         (DOCTYPE)
         html lang="en" {
@@ -140,7 +135,8 @@ async fn handler() -> Html<String> {
                 meta name="viewport" content="width=device-width, initial-scale=1.0";
                 title { "Fancy Blog" }
                 link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css";
-                link rel="stylesheet" href="https://unpkg.com/unpoly@4.0.0/dist/unpoly.min.css";
+                link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/unpoly@3.9.3/unpoly.min.css";
+                link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/unpoly@3.9.3/unpoly-bootstrap5.min.css";
                 style { r#"
                     body {
                         font-family: Arial, sans-serif;
@@ -197,8 +193,6 @@ async fn handler() -> Html<String> {
                 "# }
             }
             body {
-                script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js" {}
-                script src="https://unpkg.com/unpoly@4.0.0/dist/unpoly.min.js" {}
                 // Header
                 div class="header" {
                     h1 { "The Caden Times" }
@@ -221,7 +215,155 @@ async fn handler() -> Html<String> {
                                     a class="nav-link" href="#" { "About" }
                                 }
                                 li class="nav-item" {
-                                    a class="nav-link" href="#" { "Contact" }
+                                    a class="nav-link" href="/contact" up-layer="new" { "Contact" }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Main Content
+                div class="container my-4" {
+                    div class="row" {
+                        div class="col-lg-8" up-main {
+                            h2 { "Don't you dare try to contact me." }
+                        }
+
+                        // Sidebar
+                        div class="col-lg-4" {
+                            div class="sidebar" {
+                                h4 { "About Me" }
+                                p { "I'm an unmotivated nerd that is making this for absolutely no reason." }
+                                hr;
+                                h5 { "Categories" }
+                                ul class="list-unstyled" {
+                                    li { a href="#" { "Tech" } }
+                                    li { a href="#" { "Programming" } }
+                                    li { a href="#" { "Computer Science" } }
+                                    li { a href="#" { "Software Engineering" } }
+                                }
+                                hr;
+                                h5 { "Follow Me" }
+                                a href="#" class="btn btn-outline-primary btn-sm" { "Twitter" }
+                                a href="#" class="btn btn-outline-primary btn-sm" { "Facebook" }
+                                a href="#" class="btn btn-outline-primary btn-sm" { "Instagram" }
+                            }
+                        }
+                    }
+                }
+
+                // Footer
+                div class="footer" {
+                    p { "©2024 The Caden Times | Designed by CadenTheCreator" }
+                }
+
+                script src="https://code.jquery.com/jquery-3.5.1.min.js" {}
+                script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js" {}
+                script src="https://cdn.jsdelivr.net/npm/unpoly@3.9.3/unpoly.min.js" {}
+                script src="https://cdn.jsdelivr.net/npm/unpoly@3.9.3/unpoly-bootstrap5.min.js" {}
+            }
+        }
+    }.into_string())
+}
+
+async fn handler() -> Html<String> {
+    let mut posts: Vec<Post> = vec![];
+    for file in list_files_in_directory("./caden-blog/posts") {
+        posts.push(get_from_file(&file).unwrap());
+        //println!("{}", file);
+    }
+    // for post in &posts {
+    //     println!("{}", serialize_post(&post));
+    // }
+    Html(html! {
+        (DOCTYPE)
+        html lang="en" {
+            head {
+                meta charset="UTF-8";
+                meta name="viewport" content="width=device-width, initial-scale=1.0";
+                title { "Fancy Blog" }
+                link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css";
+                link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/unpoly@3.9.3/unpoly.min.css";
+                link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/unpoly@3.9.3/unpoly-bootstrap5.min.css";
+                style { r#"
+                    body {
+                        font-family: Arial, sans-serif;
+                        background-color: #121212;
+                        color: #e0e0e0;
+                    }
+                    .header {
+                        background-image: url('https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fpreview.redd.it%2Fi0h9ke187tk31.png%3Fwidth%3D960%26crop%3Dsmart%26auto%3Dwebp%26s%3Ddc294c8327d576f78d3cd0e08982cd6e3f619a21&f=1&nofb=1&ipt=47a8aff3e3499390c872b22b77ba3ad02b9f28fc0c0f5b5d3d82c84dd16ed6a6&ipo=images');
+                        background-position: center;
+                        color: #f0f0f0;
+                        padding: 20px;
+                        text-align: center;
+                        background-size: cover;
+                    }
+                    .post-card {
+                        background-color: #1e1e1e;
+                        color: #e0e0e0;
+                        border: none;
+                        margin-bottom: 20px;
+                        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+                        transition: 0.3s;
+                    }
+                    .post-card:hover {
+                        box-shadow: 0 8px 16px rgba(0, 0, 0, 0.5);
+                    }
+                    .sidebar {
+                        background-color: #242424;
+                        color: #e0e0e0;
+                        padding: 20px;
+                        border-radius: 8px;
+                    }
+                    .footer {
+                        background-color: #1c1c1c;
+                        color: #f0f0f0;
+                        text-align: center;
+                        padding: 15px;
+                        margin-top: 20px;
+                    }
+                    .navbar-nav .nav-link {
+                        color: #e0e0e0 !important;
+                    }
+                    .btn-primary {
+                        background-color: #007bff;
+                        border-color: #007bff;
+                    }
+                    .btn-outline-primary {
+                        color: #007bff;
+                        border-color: #007bff;
+                    }
+                    .btn-outline-primary:hover {
+                        background-color: #007bff;
+                        color: #fff;
+                    }
+                "# }
+            }
+            body {
+                // Header
+                div class="header" {
+                    h1 { "The Caden Times" }
+                    p { "I don't know why you are here" }
+                }
+
+                // Navigation Bar
+                nav class="navbar navbar-expand-lg navbar-dark bg-dark" {
+                    div class="container" {
+                        a class="navbar-brand" href="#" { "Fancy Blog" }
+                        button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation" {
+                            span class="navbar-toggler-icon" {}
+                        }
+                        div class="collapse navbar-collapse" id="navbarNav" {
+                            ul class="navbar-nav ms-auto" {
+                                li class="nav-item" {
+                                    a class="nav-link active" href="#" { "Home" }
+                                }
+                                li class="nav-item" {
+                                    a class="nav-link" href="#" { "About" }
+                                }
+                                li class="nav-item" {
+                                    a class="nav-link" href="/contact" up-layer="new" { "Contact" }
                                 }
                             }
                         }
@@ -274,7 +416,10 @@ async fn handler() -> Html<String> {
                     p { "©2024 The Caden Times | Designed by CadenTheCreator" }
                 }
 
-                // Bootstrap JavaScript Bundle
+                script src="https://code.jquery.com/jquery-3.5.1.min.js" {}
+                script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js" {}
+                script src="https://cdn.jsdelivr.net/npm/unpoly@3.9.3/unpoly.min.js" {}
+                script src="https://cdn.jsdelivr.net/npm/unpoly@3.9.3/unpoly-bootstrap5.min.js" {}
             }
         }
     }.into_string())
