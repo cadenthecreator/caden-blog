@@ -1,7 +1,12 @@
+use std::collections::HashMap;
 use std::fs;
 use std::fs::File;
 use std::io::Read;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+use axum::body::Body;
 use axum::extract::Path;
+use axum::http::{Response, StatusCode};
 use axum::response::Html;
 use axum::Router;
 use axum::routing::get;
@@ -20,6 +25,8 @@ struct Post {
     #[serde(skip)]
     url_name: String,
 }
+
+type FileCache = Arc<Mutex<HashMap<String, Vec<u8>>>>;
 
 fn list_files_in_directory(dir: &str) -> Vec<String> {
     let path = std::path::Path::new(dir);
@@ -80,6 +87,17 @@ fn render_post(post: &Post) -> Markup {
     }
 }
 
+async fn load_file(filename: &str, cache: FileCache) -> Option<Vec<u8>> {
+    let filepath = format!("./caden-blog/assets/{}", filename);
+    let mut file = File::open(&filepath).ok()?;
+    let mut contents = Vec::new();
+    file.read_to_end(&mut contents).ok()?;
+
+    // Cache the file contents
+    cache.lock().expect("cdn falied to lock the cache").insert(filename.to_string(), contents.clone());
+    Some(contents)
+}
+
 fn serialize_post(post: &Post) -> String {
     serde_json::to_string(post).expect("Failed to serialize Post")
 }
@@ -90,16 +108,64 @@ fn deserialize_post(json_data: &str,url_name: &str) -> Post {
     post
 }
 
+fn cache_control_response(content: Vec<u8>) -> Response<Body> {
+    use hyper::header::{CACHE_CONTROL, HeaderValue};
+
+    Response::builder()
+        .header(CACHE_CONTROL, HeaderValue::from_static("public, max-age=31536000"))
+        .body(Body::from(content))
+        .unwrap()
+}
+
+async fn handle_asset_request(Path(filename): Path<String>, cache: FileCache) -> Result<Response<Body>, StatusCode> {
+    // Check if file is already cached
+    if let Some(content) = cache.lock().expect("cdn failed to lock the cache").get(&filename).cloned() {
+        return Ok(cache_control_response(content));
+    }
+
+    // Load the file and cache it if not already cached
+    if let Some(content) = load_file(&filename, cache.clone()).await {
+        Ok(cache_control_response(content))
+    } else {
+        Err(StatusCode::NOT_FOUND)
+    }
+}
+
 #[tokio::main]
 async fn main() {
+    let cache: FileCache = Arc::new(Mutex::new(HashMap::new()));
+
     let app = Router::new()
         .route("/", get(handler))
         .route("/contact", get(contact))
-        .route("/post/:url_name", get(post_handler));
+        .route("/post/:url_name", get(post_handler))
+        .route("/asset/:filename", get({
+            let cache = cache.clone();
+            move |path| handle_asset_request(path, cache.clone())
+        }))
+        .route("/favicon.ico", get(serve_favicon));;
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await.unwrap();
     println!("Listening to {}", listener.local_addr().unwrap());
     axum::serve(listener, app).await.unwrap();
+}
+
+async fn serve_favicon() -> Result<Response<Body>, StatusCode> {
+    let path = PathBuf::from("./caden-blog/favicon.ico");
+
+    // Try to open the file
+    let mut file = File::open(&path).map_err(|_| StatusCode::NOT_FOUND)?;
+    let mut contents = Vec::new();
+
+    // Read the file contents into a buffer
+    file.read_to_end(&mut contents).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    // Create and return the response with caching headers
+    Ok(Response::builder()
+        .header("Content-Type", "image/x-icon")
+        .header("Cache-Control", "public, max-age=31536000")
+        .body(Body::from(contents))
+        .unwrap())
 }
 
 fn get_from_file(file_name: &str) -> Option<Post> {
