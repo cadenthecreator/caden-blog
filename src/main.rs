@@ -9,7 +9,6 @@ use chrono::{DateTime, Utc};
 use maud::{html, Markup, PreEscaped, DOCTYPE};
 use pulldown_cmark::{html, Options, Parser};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Post {
@@ -446,13 +445,67 @@ async fn post_handler(Path(url_name): Path<String>) -> Html<String> {
 
         let rendered_html = html! {
             (maud::DOCTYPE)
-            html lang="en" {
+            html data-bs-theme="dark" lang="en" {
                 head {
+                    script src="https://cdn.jsdelivr.net/gh/MarketingPipeline/Markdown-Tag/markdown-tag.js" {}
                     meta charset="UTF-8";
                     meta name="viewport" content="width=device-width, initial-scale=1.0";
                     title { (post.title) }
                     link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css";
                     style { r#"
+                        github-md {
+                            --color-prettylights-syntax-comment: #6a737d !important;
+                            --color-prettylights-syntax-constant: #79c0ff !important;
+                            --color-prettylights-syntax-entity: #d2a8ff !important;
+                            --color-prettylights-syntax-storage-modifier-import: #c9d1d9 !important;
+                            --color-prettylights-syntax-entity-tag: #7ee787 !important;
+                            --color-prettylights-syntax-keyword: #ff7b72 !important;
+                            --color-prettylights-syntax-string: #a5d6ff !important;
+                            --color-prettylights-syntax-variable: #ffa657 !important;
+                            --color-prettylights-syntax-brackethighlighter-unmatched: #f85149 !important;
+                            --color-prettylights-syntax-invalid-illegal-text: #f0f6fc !important;
+                            --color-prettylights-syntax-invalid-illegal-bg: #da3633 !important;
+                            --color-prettylights-syntax-carriage-return-text: #f0f6fc !important;
+                            --color-prettylights-syntax-carriage-return-bg: #ff7b72 !important;
+                            --color-prettylights-syntax-string-regexp: #7ee787 !important;
+                            --color-prettylights-syntax-markup-list: #e3b341 !important;
+                            --color-prettylights-syntax-markup-heading: #1f6feb !important;
+                            --color-prettylights-syntax-markup-italic: #c9d1d9 !important;
+                            --color-prettylights-syntax-markup-bold: #c9d1d9 !important;
+                            --color-prettylights-syntax-markup-deleted-text: #ffdcd7 !important;
+                            --color-prettylights-syntax-markup-deleted-bg: #67060c !important;
+                            --color-prettylights-syntax-markup-inserted-text: #aff5b4 !important;
+                            --color-prettylights-syntax-markup-inserted-bg: #033a16 !important;
+                            --color-prettylights-syntax-markup-changed-text: #ffd8a8 !important;
+                            --color-prettylights-syntax-markup-changed-bg: #5a1e02 !important;
+                            --color-prettylights-syntax-markup-ignored-text: #c9d1d9 !important;
+                            --color-prettylights-syntax-markup-ignored-bg: #1e1e1e !important;
+                            --color-prettylights-syntax-meta-diff-range: #d2a8ff !important;
+                            --color-prettylights-syntax-brackethighlighter-angle: #8b949e !important;
+                            --color-prettylights-syntax-sublimelinter-gutter-mark: #484f58 !important;
+                            --color-prettylights-syntax-constant-other-reference-link: #a5d6ff !important;
+
+                            --color-fg-default: #d4d4d4 !important;
+                            --color-fg-muted: #a0a0a0 !important;
+                            --color-fg-subtle: #888888 !important;
+                            --color-canvas-default: #1e1e1e !important;
+                            --color-canvas-subtle: #252526 !important;
+                            --color-border-default: #3e3e42 !important;
+                            --color-border-muted: rgba(110, 118, 129, 0.4) !important;
+                            --color-neutral-muted: rgba(110, 118, 129, 0.1) !important;
+                            --color-accent-fg: #569cd6 !important;
+                            --color-accent-emphasis: #4e94d4 !important;
+                            --color-attention-subtle: #5c5c5c !important;
+                            --color-danger-fg: #f85149 !important;
+
+                            /* General settings */
+                            color: var(--color-fg-default) !important;
+                            background-color: var(--color-canvas-default) !important;
+                            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji" !important;
+                            font-size: 16px !important;
+                            line-height: 1.5 !important;
+                            word-wrap: break-word !important;
+                        }
                         body {
                             font-family: Arial, sans-serif;
                             background-color: #121212;
@@ -484,7 +537,8 @@ async fn post_handler(Path(url_name): Path<String>) -> Html<String> {
                         }
                     "# }
                 }
-                body {
+                body
+                    {
                     // Header
                     div class="header" {
                         h1 { "The Caden Times" }
@@ -495,7 +549,9 @@ async fn post_handler(Path(url_name): Path<String>) -> Html<String> {
                         h2 { (post.title) }
                         p class="text-muted" { (post.timestamp.format("%Y-%m-%d %H:%M:%S").to_string()) }
                         div class="post-body" {
-                            (markdown_to_html(&post.body))
+                            github-md {
+                                (&post.body)
+                            }
                         }
                         a href="/" class="btn btn-primary mt-4" { "Back to Home" }
                     }
