@@ -5,7 +5,7 @@ use std::io::Read;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use axum::body::Body;
-use axum::extract::Path;
+use axum::extract::{Path, Query};
 use axum::http::{Response, StatusCode};
 use axum::response::Html;
 use axum::Router;
@@ -22,6 +22,7 @@ struct Post {
     image_url: String,
     summary: String,
     timestamp: DateTime<Utc>,
+    tags: Vec<String>,
     #[serde(skip)]
     url_name: String,
 }
@@ -118,6 +119,7 @@ fn cache_control_response(content: Vec<u8>) -> Response<Body> {
 }
 
 async fn handle_asset_request(Path(filename): Path<String>, cache: FileCache) -> Result<Response<Body>, StatusCode> {
+    println!("{}", &filename);
     // Check if file is already cached
     if let Some(content) = cache.lock().expect("cdn failed to lock the cache").get(&filename).cloned() {
         return Ok(cache_control_response(content));
@@ -136,10 +138,10 @@ async fn main() {
     let cache: FileCache = Arc::new(Mutex::new(HashMap::new()));
 
     let app = Router::new()
-        .route("/", get(handler))
-        .route("/contact", get(contact))
+        .route("/", get(home))
         .route("/post/:url_name", get(post_handler))
-        .route("/asset/:filename", get({
+        .route("/posts", get(posts))
+        .route("/assets/:filename", get({
             let cache = cache.clone();
             move |path| handle_asset_request(path, cache.clone())
         }))
@@ -191,162 +193,51 @@ fn get_from_file(file_name: &str) -> Option<Post> {
     }
 }
 
-async fn contact() -> Html<String> {
-    Html(html! {
-        (DOCTYPE)
-        html lang="en" {
-            head {
-                meta charset="UTF-8";
-                meta name="viewport" content="width=device-width, initial-scale=1.0";
-                title { "Fancy Blog" }
-                link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css";
-                link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/unpoly@3.9.3/unpoly.min.css";
-                link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/unpoly@3.9.3/unpoly-bootstrap5.min.css";
-                style { r#"
-                    body {
-                        font-family: Arial, sans-serif;
-                        background-color: #121212;
-                        color: #e0e0e0;
-                    }
-                    .header {
-                        background-image: url('https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fpreview.redd.it%2Fi0h9ke187tk31.png%3Fwidth%3D960%26crop%3Dsmart%26auto%3Dwebp%26s%3Ddc294c8327d576f78d3cd0e08982cd6e3f619a21&f=1&nofb=1&ipt=47a8aff3e3499390c872b22b77ba3ad02b9f28fc0c0f5b5d3d82c84dd16ed6a6&ipo=images');
-                        background-position: center;
-                        color: #f0f0f0;
-                        padding: 20px;
-                        text-align: center;
-                        background-size: cover;
-                    }
-                    .post-card {
-                        background-color: #1e1e1e;
-                        color: #e0e0e0;
-                        border: none;
-                        margin-bottom: 20px;
-                        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
-                        transition: 0.3s;
-                    }
-                    .post-card:hover {
-                        box-shadow: 0 8px 16px rgba(0, 0, 0, 0.5);
-                    }
-                    .sidebar {
-                        background-color: #242424;
-                        color: #e0e0e0;
-                        padding: 20px;
-                        border-radius: 8px;
-                    }
-                    .footer {
-                        background-color: #1c1c1c;
-                        color: #f0f0f0;
-                        text-align: center;
-                        padding: 15px;
-                        margin-top: 20px;
-                    }
-                    .navbar-nav .nav-link {
-                        color: #e0e0e0 !important;
-                    }
-                    .btn-primary {
-                        background-color: #007bff;
-                        border-color: #007bff;
-                    }
-                    .btn-outline-primary {
-                        color: #007bff;
-                        border-color: #007bff;
-                    }
-                    .btn-outline-primary:hover {
-                        background-color: #007bff;
-                        color: #fff;
-                    }
-                "# }
-            }
-            body {
-                // Header
-                div class="header" {
-                    h1 { "The Caden Times" }
-                    p { "I don't know why you are here" }
-                }
-
-                // Navigation Bar
-                nav class="navbar navbar-expand-lg navbar-dark bg-dark" {
-                    div class="container" {
-                        a class="navbar-brand" href="#" { "Fancy Blog" }
-                        button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation" {
-                            span class="navbar-toggler-icon" {}
-                        }
-                        div class="collapse navbar-collapse" id="navbarNav" {
-                            ul class="navbar-nav ms-auto" {
-                                li class="nav-item" {
-                                    a class="nav-link active" href="#" { "Home" }
-                                }
-                                li class="nav-item" {
-                                    a class="nav-link" href="#" { "About" }
-                                }
-                                li class="nav-item" {
-                                    a class="nav-link" href="/contact" up-layer="new" { "Contact" }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Main Content
-                div class="container my-4" {
-                    div class="row" {
-                        div class="col-lg-8" up-main {
-                            h2 { "Don't you dare try to contact me." }
-                        }
-
-                        // Sidebar
-                        div class="col-lg-4" {
-                            div class="sidebar" {
-                                h4 { "About Me" }
-                                p { "I'm an unmotivated nerd that is making this for absolutely no reason." }
-                                hr;
-                                h5 { "Categories" }
-                                ul class="list-unstyled" {
-                                    li { a href="#" { "Tech" } }
-                                    li { a href="#" { "Programming" } }
-                                    li { a href="#" { "Computer Science" } }
-                                    li { a href="#" { "Software Engineering" } }
-                                }
-                                hr;
-                                h5 { "Follow Me" }
-                                a href="#" class="btn btn-outline-primary btn-sm" { "Twitter" }
-                                a href="#" class="btn btn-outline-primary btn-sm" { "Facebook" }
-                                a href="#" class="btn btn-outline-primary btn-sm" { "Instagram" }
-                            }
-                        }
-                    }
-                }
-
-                // Footer
-                div class="footer" {
-                    p { "©2024 The Caden Times | Designed by CadenTheCreator" }
-                }
-
-                script src="https://code.jquery.com/jquery-3.5.1.min.js" {}
-                script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js" {}
-                script src="https://cdn.jsdelivr.net/npm/unpoly@3.9.3/unpoly.min.js" {}
-                script src="https://cdn.jsdelivr.net/npm/unpoly@3.9.3/unpoly-bootstrap5.min.js" {}
-            }
-        }
-    }.into_string())
-}
-
-async fn handler() -> Html<String> {
+async fn posts(Query(params): Query<HashMap<String, String>>) -> Html<String> {
+    let maybetag = params.get("tag");
     let mut posts: Vec<Post> = vec![];
     for file in list_files_in_directory("./caden-blog/posts") {
         posts.push(get_from_file(&file).unwrap());
         //println!("{}", file);
     }
-    // for post in &posts {
-    //     println!("{}", serialize_post(&post));
-    // }
+    match maybetag {
+        Some(tag) => Html(html! {
+        @for post in posts.iter().filter(|v| v.tags.contains(tag)).collect::<Vec<&Post>>() {
+            div class="card post-card" {
+                img src=(post.image_url) class="card-img-top" alt="Post Image";
+                div class="card-body" {
+                    h5 class="card-title" { (post.title) }
+                    p class="text-muted" { (format!("Posted on {}", post.timestamp.format("%Y-%m-%d %H:%M:%S").to_string()))}
+                    p class="card-text" { (post.summary) }
+                    a href=(format!("/post/{}",post.url_name)) class="btn btn-primary" { "Read More" }
+                }
+            }
+        }
+        }.into_string()),
+        None => Html(html! {
+        @for post in posts {
+            div class="card post-card" {
+                img src=(post.image_url) class="card-img-top" alt="Post Image";
+                div class="card-body" {
+                    h5 class="card-title" { (post.title) }
+                    p class="text-muted" { (format!("Posted on {}", post.timestamp.format("%Y-%m-%d %H:%M:%S").to_string()))}
+                    p class="card-text" { (post.summary) }
+                    a href=(format!("/post/{}",post.url_name)) class="btn btn-primary" { "Read More" }
+                }
+            }
+        }
+        }.into_string())
+    }
+}
+
+async fn home() -> Html<String> {
     Html(html! {
         (DOCTYPE)
         html lang="en" {
             head {
                 meta charset="UTF-8";
                 meta name="viewport" content="width=device-width, initial-scale=1.0";
-                title { "Fancy Blog" }
+                title { "Res techinca fortuitae" }
                 link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css";
                 link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/unpoly@3.9.3/unpoly.min.css";
                 link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/unpoly@3.9.3/unpoly-bootstrap5.min.css";
@@ -391,6 +282,9 @@ async fn handler() -> Html<String> {
                     .navbar-nav .nav-link {
                         color: #e0e0e0 !important;
                     }
+                    .tag {
+                        --bs-btn-color: #7d7d7d;
+                    }
                     .btn-primary {
                         background-color: #007bff;
                         border-color: #007bff;
@@ -403,34 +297,32 @@ async fn handler() -> Html<String> {
                         background-color: #007bff;
                         color: #fff;
                     }
+                    .text-muted {
+                        color: rgba(101, 106, 111, 0.75) !important;
+                    }
                 "# }
             }
             body {
                 // Header
                 div class="header" {
-                    h1 { "The Caden Times" }
-                    p { "I don't know why you are here" }
+                    h1 { "Res techinca fortuitae" }
                 }
-
                 // Navigation Bar
-                nav class="navbar navbar-expand-lg navbar-dark bg-dark" {
-                    div class="container" {
-                        a class="navbar-brand" href="#" { "Fancy Blog" }
-                        button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation" {
-                            span class="navbar-toggler-icon" {}
-                        }
+                nav class="navbar navbar-dark bg-dark" {
+                    div class="container-fluid" {
+                        a class="navbar-brand" { "Posts" }
                         div class="collapse navbar-collapse" id="navbarNav" {
-                            ul class="navbar-nav ms-auto" {
-                                li class="nav-item" {
-                                    a class="nav-link active" href="#" { "Home" }
-                                }
-                                li class="nav-item" {
-                                    a class="nav-link" href="#" { "About" }
-                                }
-                                li class="nav-item" {
-                                    a class="nav-link" href="/contact" up-layer="new" { "Contact" }
-                                }
-                            }
+                            // ul class="navbar-nav ms-auto" {
+                            //     li class="nav-item" {
+                            //         a class="nav-link active" href="#" { "Home" }
+                            //     }
+                            //     li class="nav-item" {
+                            //         a class="nav-link" href="#" { "About" }
+                            //     }
+                            //     li class="nav-item" {
+                            //         a class="nav-link" href="/contact" up-layer="new" { "Contact" }
+                            //     }
+                            // }
                         }
                     }
                 }
@@ -439,38 +331,23 @@ async fn handler() -> Html<String> {
                 div class="container my-4" {
                     div class="row" {
                         // Blog Posts
-                        div class="col-lg-8" {
-                            @for post in posts {
-                                div class="card post-card" {
-                                    img src=(post.image_url) class="card-img-top" alt="Post Image";
-                                    div class="card-body" {
-                                        h5 class="card-title" { (post.title) }
-                                        p class="text-muted" { (format!("Posted on {}", post.timestamp.format("%Y-%m-%d %H:%M:%S").to_string()))}
-                                        p class="card-text" { (post.summary) }
-                                        a href=(format!("/post/{}",post.url_name)) class="btn btn-primary" up-target=".modal-content" up-layer="new" { "Read More" }
-                                    }
-                                }
-                            }
-                        }
+                        div id="content" class="col-lg-8" hx-get="/posts" hx-trigger="load" hx-swap="innerHTML" {}
 
                         // Sidebar
                         div class="col-lg-4" {
                             div class="sidebar" {
                                 h4 { "About Me" }
-                                p { "I'm an unmotivated nerd that is making this for absolutely no reason." }
+                                p { "I'm a hacker man :)))." }
                                 hr;
                                 h5 { "Categories" }
                                 ul class="list-unstyled" {
-                                    li { a href="#" { "Tech" } }
-                                    li { a href="#" { "Programming" } }
-                                    li { a href="#" { "Computer Science" } }
-                                    li { a href="#" { "Software Engineering" } }
+                                    li { a class = "btn tag" hx-vals=r#"{"tag": "hardware"}"# hx-get="/posts" hx-target="#content" hx-swap="innerHTML" { "Hardware" } }
+                                    li { a class = "btn tag" hx-vals=r#"{"tag": "software"}"# hx-get="/posts" hx-target="#content" hx-swap="innerHTML" { "Software" } }
+                                    li { a class = "btn tag" hx-vals=r#"{"tag": "gaming"}"# hx-get="/posts" hx-target="#content" hx-swap="innerHTML" { "Gaming" } }
+                                    li { a class = "btn tag" hx-vals=r#"{"tag": "science"}"# hx-get="/posts" hx-target="#content" hx-swap="innerHTML" { "Science" } }
+                                    li { a class = "btn tag" hx-get="/posts" hx-target="#content" hx-swap="innerHTML" { "All" } }
                                 }
                                 hr;
-                                h5 { "Follow Me" }
-                                a href="#" class="btn btn-outline-primary btn-sm" { "Twitter" }
-                                a href="#" class="btn btn-outline-primary btn-sm" { "Facebook" }
-                                a href="#" class="btn btn-outline-primary btn-sm" { "Instagram" }
                             }
                         }
                     }
@@ -478,13 +355,14 @@ async fn handler() -> Html<String> {
 
                 // Footer
                 div class="footer" {
-                    p { "©2024 The Caden Times | Designed by CadenTheCreator" }
+                    p { "©2024 Res techinca fortuitae | Designed by Caden Ream" }
                 }
 
                 script src="https://code.jquery.com/jquery-3.5.1.min.js" {}
                 script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js" {}
                 script src="https://cdn.jsdelivr.net/npm/unpoly@3.9.3/unpoly.min.js" {}
                 script src="https://cdn.jsdelivr.net/npm/unpoly@3.9.3/unpoly-bootstrap5.min.js" {}
+                script src="https://unpkg.com/htmx.org@1.9.12" {}
             }
         }
     }.into_string())
@@ -576,17 +454,57 @@ async fn post_handler(Path(url_name): Path<String>) -> Html<String> {
                             font-family: Arial, sans-serif;
                             background-color: #121212;
                             color: #e0e0e0;
-                            padding: 20px;
                         }
-                        .container {
-                            max-width: 800px;
+                         .container {
+                            max-width: 1300px;
                             margin: 0 auto;
                         }
-                        .header, .footer {
-                            text-align: center;
-                            background-color: #343a40;
+                        .header {
+                            background-image: url('https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fpreview.redd.it%2Fi0h9ke187tk31.png%3Fwidth%3D960%26crop%3Dsmart%26auto%3Dwebp%26s%3Ddc294c8327d576f78d3cd0e08982cd6e3f619a21&f=1&nofb=1&ipt=47a8aff3e3499390c872b22b77ba3ad02b9f28fc0c0f5b5d3d82c84dd16ed6a6&ipo=images');
+                            background-position: center;
                             color: #f0f0f0;
                             padding: 20px;
+                            text-align: center;
+                            background-size: cover;
+                        }
+                        .post-card {
+                            background-color: #1e1e1e;
+                            color: #e0e0e0;
+                            border: none;
+                            margin-bottom: 20px;
+                            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+                            transition: 0.3s;
+                        }
+                        .post-card:hover {
+                            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.5);
+                        }
+                        .sidebar {
+                            background-color: #242424;
+                            color: #e0e0e0;
+                            padding: 20px;
+                            border-radius: 8px;
+                        }
+                        .footer {
+                            background-color: #1c1c1c;
+                            color: #f0f0f0;
+                            text-align: center;
+                            padding: 15px;
+                            margin-top: 20px;
+                        }
+                        .navbar-nav .nav-link {
+                            color: #e0e0e0 !important;
+                        }
+                        .btn-primary {
+                            background-color: #007bff;
+                            border-color: #007bff;
+                        }
+                        .btn-outline-primary {
+                            color: #007bff;
+                            border-color: #007bff;
+                        }
+                        .btn-outline-primary:hover {
+                            background-color: #007bff;
+                            color: #fff;
                         }
                         .post-body {
                             background-color: #1e1e1e;
@@ -594,22 +512,13 @@ async fn post_handler(Path(url_name): Path<String>) -> Html<String> {
                             border-radius: 8px;
                             box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
                         }
-                        .footer {
-                            margin-top: 20px;
-                        }
-                        .btn-primary {
-                            background-color: #007bff;
-                            border-color: #007bff;
-                        }
-                    "# }
+                "# }
                 }
-                body
-                    {
-                    // Header
+                body{
                     div class="header" {
-                        h1 { "The Caden Times" }
+                        h1 { "Res techinca fortuitae" }
                     }
-
+                    a href="/" class="btn mt-4" { "< Back" }
                     // Main Content Container
                     div class="container" {
                         h2 { (post.title) }
@@ -619,12 +528,11 @@ async fn post_handler(Path(url_name): Path<String>) -> Html<String> {
                                 (&post.body)
                             }
                         }
-                        a href="/" class="btn btn-primary mt-4" { "Back to Home" }
                     }
 
                     // Footer
                     div class="footer" {
-                        p { "&copy; 2024 Fancy Blog | Designed by You" }
+                        p { "&copy; 2024 Res techinca fortuitae | Designed by Caden Ream" }
                     }
                 }
             }
@@ -641,56 +549,78 @@ async fn post_handler(Path(url_name): Path<String>) -> Html<String> {
                     title { "404 - Post Not Found" }
                     link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css";
                     style { r#"
-                        body {
-                            font-family: Arial, sans-serif;
-                            background-color: #121212;
-                            color: #e0e0e0;
-                            padding: 20px;
-                        }
-                        .container {
-                            max-width: 800px;
-                            margin: 0 auto;
-                            text-align: center;
-                        }
-                        .header, .footer {
-                            text-align: center;
-                            background-color: #343a40;
-                            color: #f0f0f0;
-                            padding: 20px;
-                        }
-                        .error-message {
-                            background-color: #1e1e1e;
-                            padding: 20px;
-                            border-radius: 8px;
-                            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
-                        }
-                        .footer {
-                            margin-top: 20px;
-                        }
-                        .btn-primary {
-                            background-color: #007bff;
-                            border-color: #007bff;
-                        }
-                    "# }
+                    body {
+                        font-family: Arial, sans-serif;
+                        background-color: #121212;
+                        color: #e0e0e0;
+                    }
+                    .header {
+                        background-image: url('https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fpreview.redd.it%2Fi0h9ke187tk31.png%3Fwidth%3D960%26crop%3Dsmart%26auto%3Dwebp%26s%3Ddc294c8327d576f78d3cd0e08982cd6e3f619a21&f=1&nofb=1&ipt=47a8aff3e3499390c872b22b77ba3ad02b9f28fc0c0f5b5d3d82c84dd16ed6a6&ipo=images');
+                        background-position: center;
+                        color: #f0f0f0;
+                        padding: 20px;
+                        text-align: center;
+                        background-size: cover;
+                    }
+                    .post-card {
+                        background-color: #1e1e1e;
+                        color: #e0e0e0;
+                        border: none;
+                        margin-bottom: 20px;
+                        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+                        transition: 0.3s;
+                    }
+                    .post-card:hover {
+                        box-shadow: 0 8px 16px rgba(0, 0, 0, 0.5);
+                    }
+                    .sidebar {
+                        background-color: #242424;
+                        color: #e0e0e0;
+                        padding: 20px;
+                        border-radius: 8px;
+                    }
+                    .footer {
+                        background-color: #1c1c1c;
+                        color: #f0f0f0;
+                        text-align: center;
+                        padding: 15px;
+                        margin-top: 20px;
+                    }
+                    .navbar-nav .nav-link {
+                        color: #e0e0e0 !important;
+                    }
+                    .btn-primary {
+                        background-color: #007bff;
+                        border-color: #007bff;
+                    }
+                    .btn-outline-primary {
+                        color: #007bff;
+                        border-color: #007bff;
+                    }
+                    .btn-outline-primary:hover {
+                        background-color: #007bff;
+                        color: #fff;
+                    }
+                "# }
                 }
                 body {
                     // Header
                     div class="header" {
-                        h1 { "The Caden Times" }
+                        h1 { "Res techinca fortuitae" }
                     }
 
                     // Main Content Container
                     div class="container" {
                         div class="error-message" {
                             h2 { "404 - Post Not Found" }
-                            p { "The post you are looking for does not exist." }
+                            p { "The post Caden Ream are looking for does not exist." }
                             a href="/" class="btn btn-primary mt-4" { "Back to Home" }
                         }
                     }
 
                     // Footer
                     div class="footer" {
-                        p { "&copy; 2024 Fancy Blog | Designed by You" }
+                        p { "©2024 Res techinca fortuitae | Designed by Caden Ream" }
                     }
                 }
             }
@@ -706,7 +636,7 @@ async fn test() {
     use axum::http::Request;
     use tower::util::ServiceExt;
 
-    let app = Router::new().route("/", get(handler));
+    let app = Router::new().route("/", get(home));
     let response = app.oneshot(Request::builder().uri("/").body(Body::empty()).unwrap()).await.unwrap();
 
     let body = axum::body::to_bytes(response.into_body(), 1024000).await.unwrap();
