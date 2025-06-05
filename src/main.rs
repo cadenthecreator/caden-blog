@@ -119,7 +119,6 @@ fn cache_control_response(content: Vec<u8>) -> Response<Body> {
 }
 
 async fn handle_asset_request(Path(filename): Path<String>, cache: FileCache) -> Result<Response<Body>, StatusCode> {
-    println!("{}", &filename);
     // Check if file is already cached
     if let Some(content) = cache.lock().expect("cdn failed to lock the cache").get(&filename).cloned() {
         return Ok(cache_control_response(content));
@@ -239,8 +238,8 @@ async fn home() -> Html<String> {
                 meta name="viewport" content="width=device-width, initial-scale=1.0";
                 title { "Res techinca fortuitae" }
                 link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css";
-                link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/unpoly@3.9.3/unpoly.min.css";
-                link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/unpoly@3.9.3/unpoly-bootstrap5.min.css";
+                // link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/unpoly@3.9.3/unpoly.min.css";
+                // link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/unpoly@3.9.3/unpoly-bootstrap5.min.css";
                 style { r#"
                     body {
                         font-family: Arial, sans-serif;
