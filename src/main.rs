@@ -111,11 +111,16 @@ fn deserialize_post(json_data: &str,url_name: &str) -> Post {
 
 fn cache_control_response(content: Vec<u8>) -> Response<Body> {
     use hyper::header::{CACHE_CONTROL, HeaderValue};
-
-    Response::builder()
-        .header(CACHE_CONTROL, HeaderValue::from_static("public, max-age=31536000"))
-        .body(Body::from(content))
-        .unwrap()
+    match String::from_utf8(content.clone()) {
+        Err(..) => Response::builder()
+            .header(CACHE_CONTROL, HeaderValue::from_static("public, max-age=31536000"))
+            .body(Body::from(content))
+            .unwrap(),
+        Ok(str) => Response::builder()
+            .header(CACHE_CONTROL, HeaderValue::from_static("public, max-age=31536000"))
+            .body(Body::from(str))
+            .unwrap(),
+    }
 }
 
 async fn handle_asset_request(Path(filename): Path<String>, cache: FileCache) -> Result<Response<Body>, StatusCode> {
@@ -390,7 +395,7 @@ async fn post_handler(Path(url_name): Path<String>) -> Html<String> {
             (maud::DOCTYPE)
             html data-bs-theme="dark" lang="en" {
                 head {
-                    script src="https://cdn.jsdelivr.net/gh/MarketingPipeline/Markdown-Tag/markdown-tag.js" {}
+                    script src="/assets/markdown-tag.js" {}
                     meta charset="UTF-8";
                     meta name="viewport" content="width=device-width, initial-scale=1.0";
                     title { (post.title) }
@@ -511,6 +516,9 @@ async fn post_handler(Path(url_name): Path<String>) -> Html<String> {
                             border-radius: 8px;
                             box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
                         }
+                        github-md.hidden {
+                            display: none;
+                        }
                 "# }
                 }
                 body{
@@ -523,7 +531,7 @@ async fn post_handler(Path(url_name): Path<String>) -> Html<String> {
                         h2 { (post.title) }
                         p class="text-muted" { (post.timestamp.format("%Y-%m-%d %H:%M:%S").to_string()) }
                         div class="post-body" {
-                            github-md {
+                            github-md class="hidden" {
                                 (&post.body)
                             }
                         }
