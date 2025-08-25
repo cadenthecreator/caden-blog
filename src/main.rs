@@ -4,13 +4,15 @@ use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::time::SystemTime;
 use axum::body::Body;
 use axum::extract::{Path, Query};
-use axum::http::{Response, StatusCode};
+use axum::http::{HeaderMap, Response, StatusCode};
 use axum::response::Html;
 use axum::Router;
 use axum::routing::get;
 use chrono::{DateTime, Utc};
+use chrono_tz::Tz;
 use maud::{html, Markup, PreEscaped, DOCTYPE};
 use pulldown_cmark::{html, Options, Parser};
 use serde::{Deserialize, Serialize};
@@ -80,7 +82,7 @@ fn render_post(post: &Post) -> Markup {
     html! {
         div class="post" {
             h1 { (post.title) }
-            p class="text-muted" { (post.timestamp.format("%Y-%m-%d %H:%M:%S").to_string()) }
+            p class="text-muted" { (post.timestamp.format("%b %-d, %Y %-I:%M %p %Z").to_string()) }
             div class="post-content" {
                 (markdown_to_html(&post.body))
             }
@@ -197,21 +199,22 @@ fn get_from_file(file_name: &str) -> Option<Post> {
     }
 }
 
-async fn posts(Query(params): Query<HashMap<String, String>>) -> Html<String> {
+async fn posts(Query(params): Query<HashMap<String, String>>, headers: HeaderMap, UserTz(tz): UserTz) -> Html<String> {
     let maybetag = params.get("tag");
     let mut posts: Vec<Post> = vec![];
     for file in list_files_in_directory("./caden-blog/posts") {
         posts.push(get_from_file(&file).unwrap());
         //println!("{}", file);
     }
+
     match maybetag {
         Some(tag) => Html(html! {
-        @for post in posts.iter().filter(|v| v.tags.contains(tag)).collect::<Vec<&Post>>() {
+        @for post in posts.iter().filter(|v| v.tags.contains(tag) && v.timestamp < Utc::now()).collect::<Vec<&Post>>() {
             div class="card post-card" {
                 img src=(post.image_url) class="card-img-top" alt="Post Image";
                 div class="card-body" {
                     h5 class="card-title" { (post.title) }
-                    p class="text-muted" { (format!("Posted on {}", post.timestamp.format("%Y-%m-%d %H:%M:%S").to_string()))}
+                    p class="text-muted" { (format!("Posted on {}", post.timestamp.with_timezone(&tz).format("%b %-d, %Y %-I:%M %p %Z").to_string()))}
                     p class="card-text" { (post.summary) }
                     a href=(format!("/post/{}",post.url_name)) class="btn btn-primary" { "Read More" }
                 }
@@ -219,12 +222,12 @@ async fn posts(Query(params): Query<HashMap<String, String>>) -> Html<String> {
         }
         }.into_string()),
         None => Html(html! {
-        @for post in posts {
+        @for post in posts.into_iter().filter(|v| v.timestamp < Utc::now()).collect::<Vec<Post>>() {
             div class="card post-card" {
                 img src=(post.image_url) class="card-img-top" alt="Post Image";
                 div class="card-body" {
                     h5 class="card-title" { (post.title) }
-                    p class="text-muted" { (format!("Posted on {}", post.timestamp.format("%Y-%m-%d %H:%M:%S").to_string()))}
+                    p class="text-muted" { (format!("Posted on {}", post.timestamp.with_timezone(&tz).format("%b %-d, %Y %-I:%M %p %Z").to_string()))}
                     p class="card-text" { (post.summary) }
                     a href=(format!("/post/{}",post.url_name)) class="btn btn-primary" { "Read More" }
                 }
@@ -366,13 +369,73 @@ async fn home() -> Html<String> {
                 script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js" {}
                 script src="https://cdn.jsdelivr.net/npm/unpoly@3.9.3/unpoly.min.js" {}
                 script src="https://cdn.jsdelivr.net/npm/unpoly@3.9.3/unpoly-bootstrap5.min.js" {}
+                script {
+                    (PreEscaped(r#"
+                    (function setTzCookie(){
+                      try {
+                        var tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+                        // only (re)write when missing/changed
+                        if (!document.cookie.includes('tz=' + encodeURIComponent(tz))) {
+                          document.cookie = 'tz=' + encodeURIComponent(tz) + '; Path=/; Max-Age=31536000; SameSite=Lax';
+                        }
+                      } catch (e) {}
+                    })();
+                    "#))
+                }
+
+                // 2) Attach timezone header to every htmx request
+                script {
+                    (PreEscaped(r#"
+                    document.addEventListener('htmx:configRequest', function (e) {
+                      try {
+                        e.detail.headers['X-Time-Zone'] =
+                          Intl.DateTimeFormat().resolvedOptions().timeZone;
+                      } catch (e) {}
+                    });
+                    "#))
+                }
+
                 script src="https://unpkg.com/htmx.org@1.9.12" {}
             }
         }
     }.into_string())
 }
 
-async fn post_handler(Path(url_name): Path<String>) -> Html<String> {
+use axum::{async_trait, extract::FromRequestParts, http::request::Parts};
+use axum_extra::extract::cookie::CookieJar;
+
+pub struct UserTz(pub Tz);
+
+#[async_trait]
+impl<S: Send + Sync> FromRequestParts<S> for UserTz {
+    type Rejection = std::convert::Infallible;
+
+    async fn from_request_parts(parts: &mut Parts, _state: &S)
+                                -> Result<Self, Self::Rejection>
+    {
+        // Prefer the explicit htmx header
+        if let Some(tz) = parts.headers
+            .get("X-Time-Zone")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| s.parse::<Tz>().ok())
+        {
+            return Ok(UserTz(tz));
+        }
+
+        // Fallback to cookie set by the base template
+        let jar = CookieJar::from_headers(&parts.headers);
+        if let Some(tz) = jar.get("tz")
+            .and_then(|c| c.value().parse::<Tz>().ok())
+        {
+            return Ok(UserTz(tz));
+        }
+
+        Ok(UserTz(chrono_tz::UTC))
+    }
+}
+
+
+async fn post_handler(Path(url_name): Path<String>, headers: HeaderMap, UserTz(tz): UserTz) -> Html<String> {
     let dir = format!("./caden-blog/posts/{}.json",url_name);
     let path = std::path::Path::new((&dir).into());
     let display = path.display();
@@ -529,9 +592,9 @@ async fn post_handler(Path(url_name): Path<String>) -> Html<String> {
                     // Main Content Container
                     div class="container" {
                         h2 { (post.title) }
-                        p class="text-muted" { (post.timestamp.format("%Y-%m-%d %H:%M:%S").to_string()) }
+                        p class="text-muted" { (post.timestamp.with_timezone(&tz).format("%b %-d, %Y %-I:%M %p %Z").to_string()) }
                         div class="post-body" {
-                            github-md class="hidden" {
+                            github-md {
                                 (&post.body)
                             }
                         }
