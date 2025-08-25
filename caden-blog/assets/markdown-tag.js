@@ -7,7 +7,7 @@
 var Debug = false;
 function renderMarkdown(){
    
-/* Add Github CSS  */  
+/* Add GitHub CSS  */
   
 var CSSAdded = false;
 function addCss(fileName) {
