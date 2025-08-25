@@ -362,7 +362,7 @@ async fn home() -> Html<String> {
 
                 // Footer
                 div class="footer" {
-                    p { "©2024 Res techinca fortuitae | Designed by Caden Ream" }
+                    p { "©2024 Res techinca fortuitae | Designed by CadenCoaster" }
                 }
 
                 script src="https://code.jquery.com/jquery-3.5.1.min.js" {}
@@ -602,7 +602,7 @@ async fn post_handler(Path(url_name): Path<String>, headers: HeaderMap, UserTz(t
 
                     // Footer
                     div class="footer" {
-                        p { "&copy; 2024 Res techinca fortuitae | Designed by Caden Ream" }
+                        p { "&copy; 2024 Res techinca fortuitae | Designed by CadenCoaster" }
                     }
                 }
             }
@@ -683,14 +683,14 @@ async fn post_handler(Path(url_name): Path<String>, headers: HeaderMap, UserTz(t
                     div class="container" {
                         div class="error-message" {
                             h2 { "404 - Post Not Found" }
-                            p { "The post Caden Ream are looking for does not exist." }
+                            p { "The post CadenCoaster are looking for does not exist." }
                             a href="/" class="btn btn-primary mt-4" { "Back to Home" }
                         }
                     }
 
                     // Footer
                     div class="footer" {
-                        p { "©2024 Res techinca fortuitae | Designed by Caden Ream" }
+                        p { "©2024 Res techinca fortuitae | Designed by CadenCoaster" }
                     }
                 }
             }
@@ -713,5 +713,4 @@ async fn test() {
     let body_str = String::from_utf8(body.to_vec()).unwrap();
 
     assert_eq!(body_str, "html");
-//    assert!(body_str.contains("Test content"));
 }
