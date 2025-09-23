@@ -402,6 +402,7 @@ background-size: 400% 400%;
                             hr;
                             ul {
                                 li { a class = "btn-tag" hx-vals=r#"{"tag": "robotics"}"# hx-get="/posts" hx-target=".content" hx-swap="innerHTML" { "Robotics" } }
+                                li { a class = "btn-tag" hx-vals=r#"{"tag": "hardware"}"# hx-get="/posts" hx-target=".content" hx-swap="innerHTML" { "Hardware" } }
                                 li { a class = "btn-tag" hx-vals=r#"{"tag": "software"}"# hx-get="/posts" hx-target=".content" hx-swap="innerHTML" { "Software" } }
                                 li { a class = "btn-tag" hx-vals=r#"{"tag": "gaming"}"# hx-get="/posts" hx-target=".content" hx-swap="innerHTML" { "Gaming" } }
                                 li { a class = "btn-tag" hx-vals=r#"{"tag": "science"}"# hx-get="/posts" hx-target=".content" hx-swap="innerHTML" { "Science" } }
