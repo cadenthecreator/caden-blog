@@ -7,14 +7,13 @@ use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 use axum::body::Body;
 use axum::extract::{Path, Query};
-use axum::http::{HeaderMap, Response, StatusCode};
-use axum::response::Html;
+use axum::http::{HeaderMap, HeaderName, HeaderValue, Response, StatusCode};
+use axum::response::{Html, IntoResponse};
 use axum::Router;
 use axum::routing::get;
 use chrono::{DateTime, Utc};
 use chrono_tz::Tz;
 use maud::{html, Markup, PreEscaped, DOCTYPE};
-use pulldown_cmark::{html, Options, Parser};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -34,22 +33,18 @@ type FileCache = Arc<Mutex<HashMap<String, Vec<u8>>>>;
 fn list_files_in_directory(dir: &str) -> Vec<String> {
     let path = std::path::Path::new(dir);
 
-    // Ensure the directory exists
     if !path.is_dir() {
         println!("Directory {} does not exist.", dir);
         return vec![];
     }
 
-    // Collect file names into a Vec<String>
     let mut file_list = Vec::new();
     match fs::read_dir(path) {
         Ok(entries) => {
             for entry in entries {
                 if let Ok(entry) = entry {
-                    // Check if it's a file (not a directory)
                     if let Ok(file_type) = entry.file_type() {
                         if file_type.is_file() {
-                            // Get file name as a String
                             if let Some(file_name) = entry.file_name().to_str() {
                                 file_list.push(file_name.to_string());
                             }
@@ -66,25 +61,13 @@ fn list_files_in_directory(dir: &str) -> Vec<String> {
     file_list
 }
 
-/// Converts Markdown text to HTML for use in a Maud template
-fn markdown_to_html(markdown_text: &str) -> Markup {
-    let options = Options::empty();
-    let parser = Parser::new_ext(markdown_text, options);
-
-    let mut html_output = String::new();
-    html::push_html(&mut html_output, parser);
-
-    PreEscaped(html_output)
-}
-
-/// Renders the post in a Maud template, converting the body from Markdown to HTML
 fn render_post(post: &Post) -> Markup {
     html! {
         div class="post" {
             h1 { (post.title) }
             p class="text-muted" { (post.timestamp.format("%b %-d, %Y %-I:%M %p %Z").to_string()) }
             div class="post-content" {
-                (markdown_to_html(&post.body))
+                (markdown_to_html(&post.body,&Options::default()))
             }
         }
     }
@@ -96,7 +79,6 @@ async fn load_file(filename: &str, cache: FileCache) -> Option<Vec<u8>> {
     let mut contents = Vec::new();
     file.read_to_end(&mut contents).ok()?;
 
-    // Cache the file contents
     cache.lock().expect("cdn falied to lock the cache").insert(filename.to_string(), contents.clone());
     Some(contents)
 }
@@ -126,12 +108,10 @@ fn cache_control_response(content: Vec<u8>) -> Response<Body> {
 }
 
 async fn handle_asset_request(Path(filename): Path<String>, cache: FileCache) -> Result<Response<Body>, StatusCode> {
-    // Check if file is already cached
     if let Some(content) = cache.lock().expect("cdn failed to lock the cache").get(&filename).cloned() {
         return Ok(cache_control_response(content));
     }
 
-    // Load the file and cache it if not already cached
     if let Some(content) = load_file(&filename, cache.clone()).await {
         Ok(cache_control_response(content))
     } else {
@@ -161,14 +141,11 @@ async fn main() {
 async fn serve_favicon() -> Result<Response<Body>, StatusCode> {
     let path = PathBuf::from("./caden-blog/favicon.ico");
 
-    // Try to open the file
     let mut file = File::open(&path).map_err(|_| StatusCode::NOT_FOUND)?;
     let mut contents = Vec::new();
 
-    // Read the file contents into a buffer
     file.read_to_end(&mut contents).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    // Create and return the response with caching headers
     Ok(Response::builder()
         .header("Content-Type", "image/x-icon")
         .header("Cache-Control", "public, max-age=31536000")
@@ -180,9 +157,7 @@ fn get_from_file(file_name: &str) -> Option<Post> {
     let dir = format!("./caden-blog/posts/{}",file_name);
     let path = std::path::Path::new((&dir).into());
     let display = path.display();
-    // println!("{} {}", path.exists(), display.to_string());
     if path.exists() && !display.to_string().contains("..") {
-        // Open the path in read-only mode, returns `io::Result<File>`
         let mut file = match File::open(&path) {
             Err(why) => panic!("couldn't open {}: {}", display, why),
             Ok(file) => file,
@@ -199,176 +174,69 @@ fn get_from_file(file_name: &str) -> Option<Post> {
     }
 }
 
-async fn posts(Query(params): Query<HashMap<String, String>>, headers: HeaderMap, UserTz(tz): UserTz) -> Html<String> {
-    let maybetag = params.get("tag");
+
+fn render_posts_fragment<'a, I>(posts: I, tz: Tz, tag: Option<&str>) -> String
+where
+    I: IntoIterator<Item = &'a Post>,
+{
+    // returns ONLY the fragment container that matches your page’s target
+    html! {
+        @for post in posts {
+            @if post.timestamp < Utc::now() && (tag.is_none() || post.tags.contains(&tag.unwrap_or_default().to_string())) {
+                div class="card" {
+                    img src=(post.image_url) class="post-image" alt="Post Image";
+                    div class="post-body" {
+                        h2 { (post.title) }
+                        p class="timestamp" {
+                            (format!(
+                                "Posted on {}",
+                                post.timestamp.with_timezone(&tz)
+                                .format("%b %-d, %Y %-I:%M %p %Z")))
+                        }
+                        p class="summary" { (post.summary) }
+                        a href=(format!("/post/{}", post.url_name)) class="btn" { "Read More" }
+                    }
+                }
+            }
+        }
+    }.into_string()
+}
+
+async fn posts(
+    Query(params): Query<HashMap<String, String>>,
+    headers: HeaderMap,
+    UserTz(tz): UserTz,
+) -> impl IntoResponse {
+    // Load posts (same as before)
+    let mut all_posts: Vec<Post> = vec![];
+    for f in list_files_in_directory("./caden-blog/posts") {
+        if let Some(p) = get_from_file(&f) { all_posts.push(p); }
+    }
+    let tag = params.get("tag").map(String::as_str);
+    let filtered: Vec<&Post> = match tag {
+        Some(t) => all_posts.iter().filter(|p| p.tags.iter().any(|x| x == t)).collect(),
+        None => all_posts.iter().collect(),
+    };
+
+    // Build fragment body
+    let body = render_posts_fragment(filtered, tz, tag);
+
+    // Always 200 OK, text/html
+    Html(body).into_response()
+}
+
+async fn home(UserTz(tz): UserTz) -> Html<String> {
     let mut posts: Vec<Post> = vec![];
     for file in list_files_in_directory("./caden-blog/posts") {
         posts.push(get_from_file(&file).unwrap());
-        //println!("{}", file);
     }
-
-    match maybetag {
-        Some(tag) => Html(html! {
-        @for post in posts.iter().filter(|v| v.tags.contains(tag) && v.timestamp < Utc::now()).collect::<Vec<&Post>>() {
-            div class="card post-card" {
-                img src=(post.image_url) class="card-img-top" alt="Post Image";
-                div class="card-body" {
-                    h5 class="card-title" { (post.title) }
-                    p class="text-muted" { (format!("Posted on {}", post.timestamp.with_timezone(&tz).format("%b %-d, %Y %-I:%M %p %Z").to_string()))}
-                    p class="card-text" { (post.summary) }
-                    a href=(format!("/post/{}",post.url_name)) class="btn btn-primary" { "Read More" }
-                }
-            }
-        }
-        }.into_string()),
-        None => Html(html! {
-        @for post in posts.into_iter().filter(|v| v.timestamp < Utc::now()).collect::<Vec<Post>>() {
-            div class="card post-card" {
-                img src=(post.image_url) class="card-img-top" alt="Post Image";
-                div class="card-body" {
-                    h5 class="card-title" { (post.title) }
-                    p class="text-muted" { (format!("Posted on {}", post.timestamp.with_timezone(&tz).format("%b %-d, %Y %-I:%M %p %Z").to_string()))}
-                    p class="card-text" { (post.summary) }
-                    a href=(format!("/post/{}",post.url_name)) class="btn btn-primary" { "Read More" }
-                }
-            }
-        }
-        }.into_string())
-    }
-}
-
-async fn home() -> Html<String> {
     Html(html! {
         (DOCTYPE)
         html lang="en" {
             head {
                 meta charset="UTF-8";
                 meta name="viewport" content="width=device-width, initial-scale=1.0";
-                title { "Res techinca fortuitae" }
-                link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css";
-                // link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/unpoly@3.9.3/unpoly.min.css";
-                // link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/unpoly@3.9.3/unpoly-bootstrap5.min.css";
-                style { r#"
-                    body {
-                        font-family: Arial, sans-serif;
-                        background-color: #121212;
-                        color: #e0e0e0;
-                    }
-                    .header {
-                        background-image: url('https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fpreview.redd.it%2Fi0h9ke187tk31.png%3Fwidth%3D960%26crop%3Dsmart%26auto%3Dwebp%26s%3Ddc294c8327d576f78d3cd0e08982cd6e3f619a21&f=1&nofb=1&ipt=47a8aff3e3499390c872b22b77ba3ad02b9f28fc0c0f5b5d3d82c84dd16ed6a6&ipo=images');
-                        background-position: center;
-                        color: #f0f0f0;
-                        padding: 20px;
-                        text-align: center;
-                        background-size: cover;
-                    }
-                    .post-card {
-                        background-color: #1e1e1e;
-                        color: #e0e0e0;
-                        border: none;
-                        margin-bottom: 20px;
-                        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
-                        transition: 0.3s;
-                    }
-                    .post-card:hover {
-                        box-shadow: 0 8px 16px rgba(0, 0, 0, 0.5);
-                    }
-                    .sidebar {
-                        background-color: #242424;
-                        color: #e0e0e0;
-                        padding: 20px;
-                        border-radius: 8px;
-                    }
-                    .footer {
-                        background-color: #1c1c1c;
-                        color: #f0f0f0;
-                        text-align: center;
-                        padding: 15px;
-                        margin-top: 20px;
-                    }
-                    .navbar-nav .nav-link {
-                        color: #e0e0e0 !important;
-                    }
-                    .tag {
-                        --bs-btn-color: #7d7d7d;
-                    }
-                    .btn-primary {
-                        background-color: #007bff;
-                        border-color: #007bff;
-                    }
-                    .btn-outline-primary {
-                        color: #007bff;
-                        border-color: #007bff;
-                    }
-                    .btn-outline-primary:hover {
-                        background-color: #007bff;
-                        color: #fff;
-                    }
-                    .text-muted {
-                        color: rgba(101, 106, 111, 0.75) !important;
-                    }
-                "# }
-            }
-            body {
-                // Header
-                div class="header" {
-                    h1 { "Res techinca fortuitae" }
-                }
-                // Navigation Bar
-                nav class="navbar navbar-dark bg-dark" {
-                    div class="container-fluid" {
-                        a class="navbar-brand" { "Posts" }
-                        div class="collapse navbar-collapse" id="navbarNav" {
-                            // ul class="navbar-nav ms-auto" {
-                            //     li class="nav-item" {
-                            //         a class="nav-link active" href="#" { "Home" }
-                            //     }
-                            //     li class="nav-item" {
-                            //         a class="nav-link" href="#" { "About" }
-                            //     }
-                            //     li class="nav-item" {
-                            //         a class="nav-link" href="/contact" up-layer="new" { "Contact" }
-                            //     }
-                            // }
-                        }
-                    }
-                }
-
-                // Main Content
-                div class="container my-4" {
-                    div class="row" {
-                        // Blog Posts
-                        div id="content" class="col-lg-8" hx-get="/posts" hx-trigger="load" hx-swap="innerHTML" {}
-
-                        // Sidebar
-                        div class="col-lg-4" {
-                            div class="sidebar" {
-                                h4 { "About Me" }
-                                p { "I'm a hacker man :)))." }
-                                hr;
-                                h5 { "Categories" }
-                                ul class="list-unstyled" {
-                                    li { a class = "btn tag" hx-vals=r#"{"tag": "hardware"}"# hx-get="/posts" hx-target="#content" hx-swap="innerHTML" { "Hardware" } }
-                                    li { a class = "btn tag" hx-vals=r#"{"tag": "software"}"# hx-get="/posts" hx-target="#content" hx-swap="innerHTML" { "Software" } }
-                                    li { a class = "btn tag" hx-vals=r#"{"tag": "gaming"}"# hx-get="/posts" hx-target="#content" hx-swap="innerHTML" { "Gaming" } }
-                                    li { a class = "btn tag" hx-vals=r#"{"tag": "science"}"# hx-get="/posts" hx-target="#content" hx-swap="innerHTML" { "Science" } }
-                                    li { a class = "btn tag" hx-get="/posts" hx-target="#content" hx-swap="innerHTML" { "All" } }
-                                }
-                                hr;
-                            }
-                        }
-                    }
-                }
-
-                // Footer
-                div class="footer" {
-                    p { "©2024 Res techinca fortuitae | Designed by CadenCoaster" }
-                }
-
-                script src="https://code.jquery.com/jquery-3.5.1.min.js" {}
-                script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js" {}
-                script src="https://cdn.jsdelivr.net/npm/unpoly@3.9.3/unpoly.min.js" {}
-                script src="https://cdn.jsdelivr.net/npm/unpoly@3.9.3/unpoly-bootstrap5.min.js" {}
+                script src="/assets/htmx.min.js" integrity="sha384-ZBXiYtYQ6hJ2Y0ZNoYuI+Nq5MqWBr+chMrS/RkXpNzQCApHEhOt2aY8EJgqwHLkJ" crossorigin="anonymous" {}
                 script {
                     (PreEscaped(r#"
                     (function setTzCookie(){
@@ -383,7 +251,6 @@ async fn home() -> Html<String> {
                     "#))
                 }
 
-                // 2) Attach timezone header to every htmx request
                 script {
                     (PreEscaped(r#"
                     document.addEventListener('htmx:configRequest', function (e) {
@@ -394,8 +261,155 @@ async fn home() -> Html<String> {
                     });
                     "#))
                 }
+                title { "Phase Space" }
+                style { (PreEscaped(r#"
 
-                script src="https://unpkg.com/htmx.org@1.9.12" {}
+@-webkit-keyframes scroll {
+    0% { background-position:50% 0% }
+    50% { background-position:51% 100% }
+    100% { background-position:50% 0% }
+}
+@-moz-keyframes scroll {
+    0% { background-position:50% 0% }
+    50% { background-position:51% 100% }
+    100% { background-position:50% 0% }
+}
+@keyframes scroll {
+    0% { background-position:50% 0% }
+    50% { background-position:51% 100% }
+    100% { background-position:50% 0% }
+}
+
+
+:root { --speed: 0.5; }
+
+html {
+background: repeating-linear-gradient( -45deg, #00000000, #00000000 20px, #00000053 20px, #00000053 40px );
+background-size: 400% 400%;
+    background-color: rgb(13, 39, 75);
+    background-repeat: repeat;
+    background-position: 0 0;
+    background-attachment: fixed;
+    font-family: Arial, sans-serif;
+
+    /* Use a duration that shrinks as --speed grows */
+    animation-name: scroll;
+    animation-duration: calc(300s / var(--speed));
+    animation-timing-function: linear;
+    animation-iteration-count: infinite;
+
+    /* Optional vendor shorthands if you need them */
+    -webkit-animation-name: scroll;
+    -webkit-animation-duration: calc(300s / var(--speed));
+    -webkit-animation-timing-function: linear;
+    -webkit-animation-iteration-count: infinite;
+
+}
+.title {
+    font-family: Arial, sans-serif;
+    text-align: center;
+    font-size: 700%;
+    color: rgb(191, 191, 191);
+    mix-blend-mode:color-dodge;
+    margin: 1%;
+}
+.background {
+    background-color: rgb(25, 49, 85);
+    color: white;
+    margin-left: 5%;
+    margin-right: 5%;
+    padding: 3rem;
+}
+.row {
+    display: flex;
+}
+.sidebar {
+    background-color: rgb(49, 60, 98);
+    outline-width: 5px;
+    outline-color:rgb(104, 132, 156);
+    outline-style:solid;
+    padding: 20px;
+    padding-top: 0px;
+    height: fit-content;
+    padding-bottom: 0px;
+    width: 20rem;
+}
+.content {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, 500px);
+    gap: 1rem;
+    width: 100%;
+}
+.card {
+    background-color: rgb(49, 60, 98);
+    outline-width: 5px;
+    outline-color:rgb(104, 132, 156);
+    outline-style:solid;
+    padding-bottom: 5px;
+    height: fit-content;
+    width: 500px;
+    margin: 1rem;
+}
+.post-image {
+    width: 500px;
+}
+.btn {
+    color: rgb(120, 158, 240);
+    text-decoration: none;
+    background-color: rgb(43, 43, 70);
+    border-color: rgb(67, 71, 96);
+    border-width: 5px;
+    margin-left: auto;
+    margin-right: auto;
+    display: block;
+    width: 5rem ;
+    border-style: solid;
+}
+
+.btn:hover {
+    color: rgb(209, 223, 255);
+}
+
+.btn-tag{
+
+  display: inline-flex;
+  align-items: center;
+  gap: .4em;
+  color: inherit;
+  font-size: 1.5rem;
+  text-decoration: none;
+  background: transparent;
+  line-height: 1;
+}
+
+.btn-tag:hover{ opacity: .85; }
+
+.btn-tag:focus-visible{
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+"#)) }
+            }
+            body {
+                h1 class="title" { "Phase Space" }
+                div class="background" {
+                    div class="row" {
+                        // Maud turns underscores into hyphens in attribute names:
+                        div class="content" hx-get="/posts" hx-trigger="load" {}
+                        div class="sidebar" id="sidebar" {
+                            h2 { "Info" }
+                            p { "Welcome to my blog! I am primarily doing this for school.. but will likely continue posting outside of school. I enjoy talking about tech stuff mainly software. But I also enjoy talking about robotics, hardware and science. I hope you find this useful or entertaining somewhat. :)" }
+                            hr;
+                            ul {
+                                li { a class = "btn-tag" hx-vals=r#"{"tag": "hardware"}"# hx-get="/posts" hx-target=".content" hx-swap="innerHTML" { "Hardware" } }
+                                li { a class = "btn-tag" hx-vals=r#"{"tag": "software"}"# hx-get="/posts" hx-target=".content" hx-swap="innerHTML" { "Software" } }
+                                li { a class = "btn-tag" hx-vals=r#"{"tag": "gaming"}"# hx-get="/posts" hx-target=".content" hx-swap="innerHTML" { "Gaming" } }
+                                li { a class = "btn-tag" hx-vals=r#"{"tag": "science"}"# hx-get="/posts" hx-target=".content" hx-swap="innerHTML" { "Science" } }
+                                li { a class = "btn-tag" hx-get="/posts" hx-target=".content" hx-swap="innerHTML" { "All" } }
+                            }
+                        }
+                    }
+                }
             }
         }
     }.into_string())
@@ -403,6 +417,7 @@ async fn home() -> Html<String> {
 
 use axum::{async_trait, extract::FromRequestParts, http::request::Parts};
 use axum_extra::extract::cookie::CookieJar;
+use comrak::{markdown_to_html, Options};
 
 pub struct UserTz(pub Tz);
 
@@ -413,7 +428,6 @@ impl<S: Send + Sync> FromRequestParts<S> for UserTz {
     async fn from_request_parts(parts: &mut Parts, _state: &S)
                                 -> Result<Self, Self::Rejection>
     {
-        // Prefer the explicit htmx header
         if let Some(tz) = parts.headers
             .get("X-Time-Zone")
             .and_then(|v| v.to_str().ok())
@@ -422,7 +436,6 @@ impl<S: Send + Sync> FromRequestParts<S> for UserTz {
             return Ok(UserTz(tz));
         }
 
-        // Fallback to cookie set by the base template
         let jar = CookieJar::from_headers(&parts.headers);
         if let Some(tz) = jar.get("tz")
             .and_then(|c| c.value().parse::<Tz>().ok())
@@ -439,9 +452,7 @@ async fn post_handler(Path(url_name): Path<String>, headers: HeaderMap, UserTz(t
     let dir = format!("./caden-blog/posts/{}.json",url_name);
     let path = std::path::Path::new((&dir).into());
     let display = path.display();
-    //println!("{} {}", path.exists(), display.to_string());
     if path.exists() && !display.to_string().contains("..") {
-        // Open the path in read-only mode, returns `io::Result<File>`
         let mut file = match File::open(&path) {
             Err(why) => panic!("couldn't open {}: {}", display, why),
             Ok(file) => file,
@@ -455,246 +466,370 @@ async fn post_handler(Path(url_name): Path<String>, headers: HeaderMap, UserTz(t
         let mut post = deserialize_post(post_string.as_mut_str(),url_name.as_str());
 
         let rendered_html = html! {
-            (maud::DOCTYPE)
-            html data-bs-theme="dark" lang="en" {
-                head {
-                    script src="/assets/markdown-tag.js" {}
-                    meta charset="UTF-8";
-                    meta name="viewport" content="width=device-width, initial-scale=1.0";
-                    title { (post.title) }
-                    link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css";
-                    style { r#"
-                        github-md {
-                            --color-prettylights-syntax-comment: #6a737d !important;
-                            --color-prettylights-syntax-constant: #79c0ff !important;
-                            --color-prettylights-syntax-entity: #d2a8ff !important;
-                            --color-prettylights-syntax-storage-modifier-import: #c9d1d9 !important;
-                            --color-prettylights-syntax-entity-tag: #7ee787 !important;
-                            --color-prettylights-syntax-keyword: #ff7b72 !important;
-                            --color-prettylights-syntax-string: #a5d6ff !important;
-                            --color-prettylights-syntax-variable: #ffa657 !important;
-                            --color-prettylights-syntax-brackethighlighter-unmatched: #f85149 !important;
-                            --color-prettylights-syntax-invalid-illegal-text: #f0f6fc !important;
-                            --color-prettylights-syntax-invalid-illegal-bg: #da3633 !important;
-                            --color-prettylights-syntax-carriage-return-text: #f0f6fc !important;
-                            --color-prettylights-syntax-carriage-return-bg: #ff7b72 !important;
-                            --color-prettylights-syntax-string-regexp: #7ee787 !important;
-                            --color-prettylights-syntax-markup-list: #e3b341 !important;
-                            --color-prettylights-syntax-markup-heading: #1f6feb !important;
-                            --color-prettylights-syntax-markup-italic: #c9d1d9 !important;
-                            --color-prettylights-syntax-markup-bold: #c9d1d9 !important;
-                            --color-prettylights-syntax-markup-deleted-text: #ffdcd7 !important;
-                            --color-prettylights-syntax-markup-deleted-bg: #67060c !important;
-                            --color-prettylights-syntax-markup-inserted-text: #aff5b4 !important;
-                            --color-prettylights-syntax-markup-inserted-bg: #033a16 !important;
-                            --color-prettylights-syntax-markup-changed-text: #ffd8a8 !important;
-                            --color-prettylights-syntax-markup-changed-bg: #5a1e02 !important;
-                            --color-prettylights-syntax-markup-ignored-text: #c9d1d9 !important;
-                            --color-prettylights-syntax-markup-ignored-bg: #1e1e1e !important;
-                            --color-prettylights-syntax-meta-diff-range: #d2a8ff !important;
-                            --color-prettylights-syntax-brackethighlighter-angle: #8b949e !important;
-                            --color-prettylights-syntax-sublimelinter-gutter-mark: #484f58 !important;
-                            --color-prettylights-syntax-constant-other-reference-link: #a5d6ff !important;
+        (DOCTYPE)
+        html lang="en" {
+            head {
+                meta charset="UTF-8";
+                meta name="viewport" content="width=device-width, initial-scale=1.0";
+                // GitHub dark (auto when prefers-color-scheme: dark)
+                link rel="stylesheet"
+                     href="https://unpkg.com/@highlightjs/cdn-assets@11.9.0/styles/github-dark-dimmed.min.css";
 
-                            --color-fg-default: #d4d4d4 !important;
-                            --color-fg-muted: #a0a0a0 !important;
-                            --color-fg-subtle: #888888 !important;
-                            --color-canvas-default: #1e1e1e !important;
-                            --color-canvas-subtle: #252526 !important;
-                            --color-border-default: #3e3e42 !important;
-                            --color-border-muted: rgba(110, 118, 129, 0.4) !important;
-                            --color-neutral-muted: rgba(110, 118, 129, 0.1) !important;
-                            --color-accent-fg: #569cd6 !important;
-                            --color-accent-emphasis: #4e94d4 !important;
-                            --color-attention-subtle: #5c5c5c !important;
-                            --color-danger-fg: #f85149 !important;
+                // highlight.js core (common languages)
+                script src="https://unpkg.com/@highlightjs/cdn-assets@11.9.0/highlight.min.js" {}
 
-                            /* General settings */
-                            color: var(--color-fg-default) !important;
-                            background-color: var(--color-canvas-default) !important;
-                            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji" !important;
-                            font-size: 16px !important;
-                            line-height: 1.5 !important;
-                            word-wrap: break-word !important;
+                // (Optional) ensure Rust grammar is present
+                script src="https://unpkg.com/@highlightjs/cdn-assets@11.9.0/languages/rust.min.js" {}
+
+                // init after scripts load
+                script { (PreEscaped("hljs.highlightAll();")) }
+
+                // optional: GitHub-like box spacing for blocks
+                style { (PreEscaped(r#"
+                    pre { padding: 16px; border-radius: 6px; overflow: auto; }
+                    pre > code { background: transparent; padding: 0; }
+                "#)) }
+                script src="/assets/htmx.min.js" integrity="sha384-ZBXiYtYQ6hJ2Y0ZNoYuI+Nq5MqWBr+chMrS/RkXpNzQCApHEhOt2aY8EJgqwHLkJ" crossorigin="anonymous" {}
+                script {
+                    (PreEscaped(r#"
+                    (function setTzCookie(){
+                      try {
+                        var tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+                        // only (re)write when missing/changed
+                        if (!document.cookie.includes('tz=' + encodeURIComponent(tz))) {
+                          document.cookie = 'tz=' + encodeURIComponent(tz) + '; Path=/; Max-Age=31536000; SameSite=Lax';
                         }
-                        body {
-                            font-family: Arial, sans-serif;
-                            background-color: #121212;
-                            color: #e0e0e0;
-                        }
-                         .container {
-                            max-width: 1300px;
-                            margin: 0 auto;
-                        }
-                        .header {
-                            background-image: url('https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fpreview.redd.it%2Fi0h9ke187tk31.png%3Fwidth%3D960%26crop%3Dsmart%26auto%3Dwebp%26s%3Ddc294c8327d576f78d3cd0e08982cd6e3f619a21&f=1&nofb=1&ipt=47a8aff3e3499390c872b22b77ba3ad02b9f28fc0c0f5b5d3d82c84dd16ed6a6&ipo=images');
-                            background-position: center;
-                            color: #f0f0f0;
-                            padding: 20px;
-                            text-align: center;
-                            background-size: cover;
-                        }
-                        .post-card {
-                            background-color: #1e1e1e;
-                            color: #e0e0e0;
-                            border: none;
-                            margin-bottom: 20px;
-                            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
-                            transition: 0.3s;
-                        }
-                        .post-card:hover {
-                            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.5);
-                        }
-                        .sidebar {
-                            background-color: #242424;
-                            color: #e0e0e0;
-                            padding: 20px;
-                            border-radius: 8px;
-                        }
-                        .footer {
-                            background-color: #1c1c1c;
-                            color: #f0f0f0;
-                            text-align: center;
-                            padding: 15px;
-                            margin-top: 20px;
-                        }
-                        .navbar-nav .nav-link {
-                            color: #e0e0e0 !important;
-                        }
-                        .btn-primary {
-                            background-color: #007bff;
-                            border-color: #007bff;
-                        }
-                        .btn-outline-primary {
-                            color: #007bff;
-                            border-color: #007bff;
-                        }
-                        .btn-outline-primary:hover {
-                            background-color: #007bff;
-                            color: #fff;
-                        }
-                        .post-body {
-                            background-color: #1e1e1e;
-                            padding: 20px;
-                            border-radius: 8px;
-                            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
-                        }
-                        github-md.hidden {
-                            display: none;
-                        }
-                "# }
+                      } catch (e) {}
+                    })();
+                    "#))
                 }
-                body{
-                    div class="header" {
-                        h1 { "Res techinca fortuitae" }
-                    }
-                    a href="/" class="btn mt-4" { "< Back" }
-                    // Main Content Container
-                    div class="container" {
-                        h2 { (post.title) }
-                        p class="text-muted" { (post.timestamp.with_timezone(&tz).format("%b %-d, %Y %-I:%M %p %Z").to_string()) }
-                        div class="post-body" {
-                            github-md {
-                                (&post.body)
-                            }
-                        }
-                    }
 
-                    // Footer
-                    div class="footer" {
-                        p { "&copy; 2024 Res techinca fortuitae | Designed by CadenCoaster" }
+                script {
+                    (PreEscaped(r#"
+                    document.addEventListener('htmx:configRequest', function (e) {
+                      try {
+                        e.detail.headers['X-Time-Zone'] =
+                          Intl.DateTimeFormat().resolvedOptions().timeZone;
+                      } catch (e) {}
+                    });
+                    "#))
+                }
+                title { (format!("Phase Space - {}",&post.title)) }
+                style { (PreEscaped(r#"
+
+@-webkit-keyframes scroll {
+    0% { background-position:50% 0% }
+    50% { background-position:51% 100% }
+    100% { background-position:50% 0% }
+}
+@-moz-keyframes scroll {
+    0% { background-position:50% 0% }
+    50% { background-position:51% 100% }
+    100% { background-position:50% 0% }
+}
+@keyframes scroll {
+    0% { background-position:50% 0% }
+    50% { background-position:51% 100% }
+    100% { background-position:50% 0% }
+}
+
+
+:root { --speed: 0.5; }
+
+html {
+background: repeating-linear-gradient( -45deg, #00000000, #00000000 20px, #00000053 20px, #00000053 40px );
+background-size: 400% 400%;
+    background-color: rgb(13, 39, 75);
+    background-repeat: repeat;
+    background-position: 0 0;
+    background-attachment: fixed;
+    font-family: Arial, sans-serif;
+
+    /* Use a duration that shrinks as --speed grows */
+    animation-name: scroll;
+    animation-duration: calc(300s / var(--speed));
+    animation-timing-function: linear;
+    animation-iteration-count: infinite;
+
+    /* Optional vendor shorthands if you need them */
+    -webkit-animation-name: scroll;
+    -webkit-animation-duration: calc(300s / var(--speed));
+    -webkit-animation-timing-function: linear;
+    -webkit-animation-iteration-count: infinite;
+
+}
+.title {
+    font-family: Arial, sans-serif;
+    text-align: center;
+    font-size: 700%;
+    color: rgb(191, 191, 191);
+    mix-blend-mode:color-dodge;
+    margin: 1%;
+}
+.background {
+    background-color: rgb(25, 49, 85);
+    color: white;
+    margin-left: 20%;
+    margin-right: 20%;
+    padding: 3rem;
+}
+.row {
+    display: flex;
+}
+.content {
+    width: 100%;
+}
+.card {
+    background-color: rgb(49, 60, 98);
+    outline-width: 5px;
+    outline-color:rgb(104, 132, 156);
+    outline-style:solid;
+    padding-bottom: 5px;
+    height: fit-content;
+    width: 500px;
+    margin: 1rem;
+}
+.card-img-top {
+    width: 500px;
+}
+.btn {
+    color: rgb(120, 158, 240);
+    text-decoration: none;
+    background-color: rgb(43, 43, 70);
+    border-color: rgb(67, 71, 96);
+    border-width: 5px;
+    margin-left: auto;
+    margin-right: auto;
+    display: block;
+    width: 5rem ;
+    border-style: solid;
+}
+
+.btn:hover {
+    color: rgb(209, 223, 255);
+}
+a {
+    color: rgb(135, 246, 255)
+}
+
+code.hljs {
+    background: rgb(15, 29, 65);
+}
+
+.back-btn{
+
+  display: inline-flex;
+  align-items: center;
+  gap: .4em;
+  color: rgb(200,200,200);
+  font-size: 1.5rem;
+  text-decoration: none;
+  background: transparent;
+  line-height: 1;
+}
+
+.back-btn:hover{ opacity: .85; }
+
+.back-btn:focus-visible{
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+"#)) }
+            }
+            body {
+                h1 class="title" { (&post.title) }
+                div class="background" {
+                    div class="content" {
+                            a href="/" class="back-btn" {"< Back"}
+                        (PreEscaped(markdown_to_html(&post.body,&Options::default())))
                     }
                 }
             }
-        };
+        }
+    };
         Html(rendered_html.into_string())
     }   else {
-        // Render a 404 page with consistent styling if the post is not found
         let rendered_html = html! {
-            (maud::DOCTYPE)
-            html lang="en" {
-                head {
-                    meta charset="UTF-8";
-                    meta name="viewport" content="width=device-width, initial-scale=1.0";
-                    title { "404 - Post Not Found" }
-                    link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css";
-                    style { r#"
-                    body {
-                        font-family: Arial, sans-serif;
-                        background-color: #121212;
-                        color: #e0e0e0;
-                    }
-                    .header {
-                        background-image: url('https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fpreview.redd.it%2Fi0h9ke187tk31.png%3Fwidth%3D960%26crop%3Dsmart%26auto%3Dwebp%26s%3Ddc294c8327d576f78d3cd0e08982cd6e3f619a21&f=1&nofb=1&ipt=47a8aff3e3499390c872b22b77ba3ad02b9f28fc0c0f5b5d3d82c84dd16ed6a6&ipo=images');
-                        background-position: center;
-                        color: #f0f0f0;
-                        padding: 20px;
-                        text-align: center;
-                        background-size: cover;
-                    }
-                    .post-card {
-                        background-color: #1e1e1e;
-                        color: #e0e0e0;
-                        border: none;
-                        margin-bottom: 20px;
-                        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
-                        transition: 0.3s;
-                    }
-                    .post-card:hover {
-                        box-shadow: 0 8px 16px rgba(0, 0, 0, 0.5);
-                    }
-                    .sidebar {
-                        background-color: #242424;
-                        color: #e0e0e0;
-                        padding: 20px;
-                        border-radius: 8px;
-                    }
-                    .footer {
-                        background-color: #1c1c1c;
-                        color: #f0f0f0;
-                        text-align: center;
-                        padding: 15px;
-                        margin-top: 20px;
-                    }
-                    .navbar-nav .nav-link {
-                        color: #e0e0e0 !important;
-                    }
-                    .btn-primary {
-                        background-color: #007bff;
-                        border-color: #007bff;
-                    }
-                    .btn-outline-primary {
-                        color: #007bff;
-                        border-color: #007bff;
-                    }
-                    .btn-outline-primary:hover {
-                        background-color: #007bff;
-                        color: #fff;
-                    }
-                "# }
-                }
-                body {
-                    // Header
-                    div class="header" {
-                        h1 { "Res techinca fortuitae" }
-                    }
+        (DOCTYPE)
+        html lang="en" {
+            head {
+                meta charset="UTF-8";
+                meta name="viewport" content="width=device-width, initial-scale=1.0";
+                // GitHub dark (auto when prefers-color-scheme: dark)
+                link rel="stylesheet"
+                     href="https://unpkg.com/@highlightjs/cdn-assets@11.9.0/styles/github-dark-dimmed.min.css";
 
-                    // Main Content Container
-                    div class="container" {
-                        div class="error-message" {
-                            h2 { "404 - Post Not Found" }
-                            p { "The post CadenCoaster are looking for does not exist." }
-                            a href="/" class="btn btn-primary mt-4" { "Back to Home" }
+                // highlight.js core (common languages)
+                script src="https://unpkg.com/@highlightjs/cdn-assets@11.9.0/highlight.min.js" {}
+
+                // (Optional) ensure Rust grammar is present
+                script src="https://unpkg.com/@highlightjs/cdn-assets@11.9.0/languages/rust.min.js" {}
+
+                // init after scripts load
+                script { (PreEscaped("hljs.highlightAll();")) }
+
+                // optional: GitHub-like box spacing for blocks
+                style { (PreEscaped(r#"
+                    pre { padding: 16px; border-radius: 6px; overflow: auto; }
+                    pre > code { background: transparent; padding: 0; }
+                "#)) }
+                script src="/assets/htmx.min.js" integrity="sha384-ZBXiYtYQ6hJ2Y0ZNoYuI+Nq5MqWBr+chMrS/RkXpNzQCApHEhOt2aY8EJgqwHLkJ" crossorigin="anonymous" {}
+                script {
+                    (PreEscaped(r#"
+                    (function setTzCookie(){
+                      try {
+                        var tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+                        // only (re)write when missing/changed
+                        if (!document.cookie.includes('tz=' + encodeURIComponent(tz))) {
+                          document.cookie = 'tz=' + encodeURIComponent(tz) + '; Path=/; Max-Age=31536000; SameSite=Lax';
                         }
-                    }
+                      } catch (e) {}
+                    })();
+                    "#))
+                }
 
-                    // Footer
-                    div class="footer" {
-                        p { "©2024 Res techinca fortuitae | Designed by CadenCoaster" }
+                script {
+                    (PreEscaped(r#"
+                    document.addEventListener('htmx:configRequest', function (e) {
+                      try {
+                        e.detail.headers['X-Time-Zone'] =
+                          Intl.DateTimeFormat().resolvedOptions().timeZone;
+                      } catch (e) {}
+                    });
+                    "#))
+                }
+                title { "Phase Space - 404 not found" }
+                style { (PreEscaped(r#"
+
+@-webkit-keyframes scroll {
+    0% { background-position:50% 0% }
+    50% { background-position:51% 100% }
+    100% { background-position:50% 0% }
+}
+@-moz-keyframes scroll {
+    0% { background-position:50% 0% }
+    50% { background-position:51% 100% }
+    100% { background-position:50% 0% }
+}
+@keyframes scroll {
+    0% { background-position:50% 0% }
+    50% { background-position:51% 100% }
+    100% { background-position:50% 0% }
+}
+
+
+:root { --speed: 0.5; }
+
+html {
+background: repeating-linear-gradient( -45deg, #00000000, #00000000 20px, #00000053 20px, #00000053 40px );
+background-size: 400% 400%;
+    background-color: rgb(13, 39, 75);
+    background-repeat: repeat;
+    background-position: 0 0;
+    background-attachment: fixed;
+    font-family: Arial, sans-serif;
+
+    /* Use a duration that shrinks as --speed grows */
+    animation-name: scroll;
+    animation-duration: calc(300s / var(--speed));
+    animation-timing-function: linear;
+    animation-iteration-count: infinite;
+
+    /* Optional vendor shorthands if you need them */
+    -webkit-animation-name: scroll;
+    -webkit-animation-duration: calc(300s / var(--speed));
+    -webkit-animation-timing-function: linear;
+    -webkit-animation-iteration-count: infinite;
+
+}
+.title {
+    font-family: Arial, sans-serif;
+    text-align: center;
+    font-size: 700%;
+    color: rgb(191, 191, 191);
+    mix-blend-mode:color-dodge;
+    margin: 1%;
+    text-decoration: none;
+}
+.background {
+    background-color: rgb(25, 49, 85);
+    color: white;
+    margin-left: 20%;
+    margin-right: 20%;
+    padding: 3rem;
+}
+.row {
+    display: flex;
+}
+.content {
+    width: 100%;
+}
+.card {
+    background-color: rgb(49, 60, 98);
+    outline-width: 5px;
+    outline-color:rgb(104, 132, 156);
+    outline-style:solid;
+    padding-bottom: 5px;
+    height: fit-content;
+    width: 500px;
+    margin: 1rem;
+}
+.card-img-top {
+    width: 500px;
+}
+.btn {
+    color: rgb(120, 158, 240);
+    text-decoration: none;
+    background-color: rgb(43, 43, 70);
+    border-color: rgb(67, 71, 96);
+    border-width: 5px;
+    margin-left: auto;
+    margin-right: auto;
+    display: block;
+    width: 5rem ;
+    border-style: solid;
+}
+
+.btn:hover {
+    color: rgb(209, 223, 255);
+}
+a {
+    color: rgb(135, 246, 255)
+}
+
+code.hljs {
+    background: rgb(15, 29, 65);
+}
+.back-btn{
+
+  display: inline-flex;
+  align-items: center;
+  gap: .4em;
+  color: inherit;
+  font-size: 2rem;
+  text-decoration: none;
+  background: transparent;
+  line-height: 1;
+}
+
+.back-btn:hover{ opacity: .85; }
+
+.back-btn:focus-visible{
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+"#)) }
+            }
+            body {
+                h1 class="title" { "Are you lost?" }
+                div class="background" {
+                    div class="content" {
+                        h1 {"This page doesn't exist.."} h1 {"sorry to disappoint."} a href="/" class = "back-btn" {"> Go Home <"}
                     }
                 }
             }
-        };
+        }
+    };
         Html(rendered_html.into_string())
     }
 
