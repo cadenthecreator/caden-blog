@@ -173,7 +173,6 @@ fn get_from_file(file_name: &str) -> Option<Post> {
 fn render_posts_fragment(posts: Vec<Post>, tz: Tz, tag: Option<&str>) -> String
 {
     // returns ONLY the fragment container that matches your page’s target
-    println!("uaghhh {}",Local::now());
     html! {
         @for post in posts.into_iter() {
             @if post.timestamp < Utc::now() && (tag.is_none() || post.tags.contains(&tag.unwrap_or_default().to_string())) {
@@ -207,7 +206,6 @@ async fn posts(
         if let Some(p) = get_from_file(&f) { all_posts.push(p); }
     }
     let tag = params.get("tag").map(String::as_str);
-    println!("{:?}",tag);
 
     // Build fragment body
     let body = render_posts_fragment(all_posts, tz, tag);
