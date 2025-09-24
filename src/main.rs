@@ -179,7 +179,12 @@ fn render_posts_fragment(posts: Vec<Post>, tz: Tz, tag: Option<&str>) -> String
                 div class="card" {
                     img src=(post.image_url) class="post-image" alt="Post Image";
                     div class="post-body" {
-                        h2 { (post.title) }
+                        h2 class="post-title" { (post.title) }
+                        @if post.tags.len() > 0 {
+                            p class="tags" {
+                                (post.tags.join(", "))
+                            }
+                        }
                         p class="timestamp" {
                             (format!(
                                 "Posted on {}",
@@ -294,6 +299,17 @@ background-size: 400% 400%;
     -webkit-animation-iteration-count: infinite;
 
 }
+.tags {
+  color: #a4a4a4;
+  font-size: small;
+}
+.post-title {
+  margin-bottom: 0px;
+}
+.timestamp {
+  font-size: 0.6rem;
+  color: #d5d5d5;
+}
 .title {
     font-family: Arial, sans-serif;
     text-align: center;
@@ -313,7 +329,7 @@ background-size: 400% 400%;
     display: flex;
 }
 .sidebar {
-    background-color: rgb(49, 60, 98);
+    background-color: rgb(36, 50, 100);
     padding: 20px;
     padding-top: 0px;
     height: fit-content;
@@ -327,7 +343,7 @@ background-size: 400% 400%;
     width: 100%;
 }
 .card {
-    background-color: rgb(49, 60, 98);
+    background-color: rgb(36, 50, 100);
     padding: 5px;
     height: 600px;
     width: 400px;
@@ -335,20 +351,18 @@ background-size: 400% 400%;
 }
 .post-image {
     width: 390px;
+    display:block;
     margin-left: auto;
     margin-right: auto;
 }
 .btn {
-    color: rgb(120, 158, 240);
-    text-decoration: none;
-    background-color: rgb(43, 43, 70);
-    border-color: rgb(67, 71, 96);
-    border-width: 5px;
-    margin-left: auto;
-    margin-right: auto;
-    display: block;
-    width: 5rem ;
-    border-style: solid;
+  color: rgb(0, 171, 255);
+  text-decoration: none;
+  margin-left: auto;
+  margin-right: auto;
+  display: block;
+  width: fit-content;
+  font-size: larger;
 }
 
 .btn:hover {
