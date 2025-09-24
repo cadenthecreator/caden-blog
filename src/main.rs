@@ -174,7 +174,7 @@ fn get_from_file(file_name: &str) -> Option<Post> {
 }
 
 
-fn render_posts_fragment(posts: Vec<&Post>, tz: Tz, tag: Option<&str>) -> String
+fn render_posts_fragment(posts: Vec<Post>, tz: Tz, tag: Option<&str>) -> String
 {
     // returns ONLY the fragment container that matches your page’s target
     println!("uaghhh {}",Local::now());
@@ -211,13 +211,9 @@ async fn posts(
         if let Some(p) = get_from_file(&f) { all_posts.push(p); }
     }
     let tag = params.get("tag").map(String::as_str);
-    let filtered: Vec<&Post> = match tag {
-        Some(t) => all_posts.iter().filter(|p| p.tags.iter().any(|x| x == t)).collect(),
-        None => all_posts.iter().collect(),
-    };
 
     // Build fragment body
-    let body = render_posts_fragment(filtered, tz, tag);
+    let body = render_posts_fragment(all_posts, tz, tag);
 
     // Always 200 OK, text/html
     Html(body).into_response()
