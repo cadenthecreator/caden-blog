@@ -478,31 +478,6 @@ async fn post_handler(Path(url_name): Path<String>, headers: HeaderMap, UserTz(t
                     pre { padding: 16px; border-radius: 6px; overflow: auto; }
                     pre > code { background: transparent; padding: 0; }
                 "#)) }
-                script src="/assets/htmx.min.js" integrity="sha384-ZBXiYtYQ6hJ2Y0ZNoYuI+Nq5MqWBr+chMrS/RkXpNzQCApHEhOt2aY8EJgqwHLkJ" crossorigin="anonymous" {}
-                script {
-                    (PreEscaped(r#"
-                    (function setTzCookie(){
-                      try {
-                        var tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-                        // only (re)write when missing/changed
-                        if (!document.cookie.includes('tz=' + encodeURIComponent(tz))) {
-                          document.cookie = 'tz=' + encodeURIComponent(tz) + '; Path=/; Max-Age=31536000; SameSite=Lax';
-                        }
-                      } catch (e) {}
-                    })();
-                    "#))
-                }
-
-                script {
-                    (PreEscaped(r#"
-                    document.addEventListener('htmx:configRequest', function (e) {
-                      try {
-                        e.detail.headers['X-Time-Zone'] =
-                          Intl.DateTimeFormat().resolvedOptions().timeZone;
-                      } catch (e) {}
-                    });
-                    "#))
-                }
                 title { (format!("Phase Space - {}",&post.title)) }
                 style { (PreEscaped(r#"
 
@@ -664,31 +639,6 @@ code.hljs {
                     pre { padding: 16px; border-radius: 6px; overflow: auto; }
                     pre > code { background: transparent; padding: 0; }
                 "#)) }
-                script src="/assets/htmx.min.js" integrity="sha384-ZBXiYtYQ6hJ2Y0ZNoYuI+Nq5MqWBr+chMrS/RkXpNzQCApHEhOt2aY8EJgqwHLkJ" crossorigin="anonymous" {}
-                script {
-                    (PreEscaped(r#"
-                    (function setTzCookie(){
-                      try {
-                        var tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-                        // only (re)write when missing/changed
-                        if (!document.cookie.includes('tz=' + encodeURIComponent(tz))) {
-                          document.cookie = 'tz=' + encodeURIComponent(tz) + '; Path=/; Max-Age=31536000; SameSite=Lax';
-                        }
-                      } catch (e) {}
-                    })();
-                    "#))
-                }
-
-                script {
-                    (PreEscaped(r#"
-                    document.addEventListener('htmx:configRequest', function (e) {
-                      try {
-                        e.detail.headers['X-Time-Zone'] =
-                          Intl.DateTimeFormat().resolvedOptions().timeZone;
-                      } catch (e) {}
-                    });
-                    "#))
-                }
                 title { "Phase Space - 404 not found" }
                 style { (PreEscaped(r#"
 
