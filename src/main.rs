@@ -227,7 +227,7 @@ async fn home(UserTz(tz): UserTz) -> Html<String> {
             head {
                 meta charset="UTF-8";
                 meta name="viewport" content="width=device-width, initial-scale=1.0";
-                script src="/assets/htmx.min.js" integrity="sha384-ZBXiYtYQ6hJ2Y0ZNoYuI+Nq5MqWBr+chMrS/RkXpNzQCApHEhOt2aY8EJgqwHLkJ" crossorigin="anonymous" {}
+                script src="/assets/htmx.min.js" {}
                 script {
                     (PreEscaped(r#"
                     (function setTzCookie(){
