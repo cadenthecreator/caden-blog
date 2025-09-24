@@ -325,9 +325,6 @@ background-size: 400% 400%;
 }
 .sidebar {
     background-color: rgb(49, 60, 98);
-    outline-width: 5px;
-    outline-color:rgb(104, 132, 156);
-    outline-style:solid;
     padding: 20px;
     padding-top: 0px;
     height: fit-content;
@@ -336,22 +333,21 @@ background-size: 400% 400%;
 }
 .content {
     display: grid;
-    grid-template-columns: repeat(auto-fill, 500px);
+    grid-template-columns: repeat(auto-fill, 400px);
     gap: 1rem;
     width: 100%;
 }
 .card {
     background-color: rgb(49, 60, 98);
-    outline-width: 5px;
-    outline-color:rgb(104, 132, 156);
-    outline-style:solid;
-    padding-bottom: 5px;
-    height: fit-content;
-    width: 500px;
+    padding: 5px;
+    height: 600px;
+    width: 400px;
     margin: 1rem;
 }
 .post-image {
-    width: 500px;
+    width: 390px;
+    margin-left: auto;
+    margin-right: auto;
 }
 .btn {
     color: rgb(120, 158, 240);
@@ -380,6 +376,7 @@ background-size: 400% 400%;
   text-decoration: none;
   background: transparent;
   line-height: 1;
+  border-width: 0px;
 }
 
 .btn-tag:hover{ opacity: .85; }
@@ -401,12 +398,12 @@ background-size: 400% 400%;
                             p { "Welcome to my blog! I am primarily doing this for school.. but will likely continue posting outside of school. I enjoy talking about tech stuff mainly software. But I also enjoy talking about robotics, hardware and science. I hope you find this useful or entertaining somewhat. :)" }
                             hr;
                             ul {
-                                li { a class = "btn-tag" hx-vals=r#"{"tag": "robotics"}"# hx-get="/posts" hx-target=".content" hx-swap="innerHTML" { "Robotics" } }
-                                li { a class = "btn-tag" hx-vals=r#"{"tag": "hardware"}"# hx-get="/posts" hx-target=".content" hx-swap="innerHTML" { "Hardware" } }
-                                li { a class = "btn-tag" hx-vals=r#"{"tag": "software"}"# hx-get="/posts" hx-target=".content" hx-swap="innerHTML" { "Software" } }
-                                li { a class = "btn-tag" hx-vals=r#"{"tag": "gaming"}"# hx-get="/posts" hx-target=".content" hx-swap="innerHTML" { "Gaming" } }
-                                li { a class = "btn-tag" hx-vals=r#"{"tag": "science"}"# hx-get="/posts" hx-target=".content" hx-swap="innerHTML" { "Science" } }
-                                li { a class = "btn-tag" hx-get="/posts" hx-target=".content" hx-swap="innerHTML" { "All" } }
+                                li { button class = "btn-tag" hx-vals=r#"{"tag": "robotics"}"# hx-get="/posts" hx-target=".content" hx-swap="innerHTML" { "Robotics" } }
+                                li { button class = "btn-tag" hx-vals=r#"{"tag": "hardware"}"# hx-get="/posts" hx-target=".content" hx-swap="innerHTML" { "Hardware" } }
+                                li { button class = "btn-tag" hx-vals=r#"{"tag": "software"}"# hx-get="/posts" hx-target=".content" hx-swap="innerHTML" { "Software" } }
+                                li { button class = "btn-tag" hx-vals=r#"{"tag": "gaming"}"# hx-get="/posts" hx-target=".content" hx-swap="innerHTML" { "Gaming" } }
+                                li { button class = "btn-tag" hx-vals=r#"{"tag": "science"}"# hx-get="/posts" hx-target=".content" hx-swap="innerHTML" { "Science" } }
+                                li { button class = "btn-tag" hx-get="/posts" hx-target=".content" hx-swap="innerHTML" { "All" } }
                             }
                         }
                     }
@@ -568,10 +565,12 @@ background-size: 400% 400%;
     margin: 1%;
 }
 .background {
+    display: block;
     background-color: rgb(25, 49, 85);
     color: white;
-    margin-left: 20%;
-    margin-right: 20%;
+    margin: 0 auto;
+    width: 70%;
+    overflow-wrap: anywhere;
     padding: 3rem;
 }
 .row {
