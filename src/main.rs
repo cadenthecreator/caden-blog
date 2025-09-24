@@ -57,7 +57,7 @@ fn list_files_in_directory(dir: &str) -> Vec<String> {
             println!("Error reading directory {}: {}", dir, e);
         }
     }
-    println!("{:?}", file_list);
+    println!("augh {:?}", file_list);
     file_list
 }
 
