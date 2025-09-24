@@ -177,7 +177,7 @@ fn get_from_file(file_name: &str) -> Option<Post> {
 fn render_posts_fragment(posts: Vec<&Post>, tz: Tz, tag: Option<&str>) -> String
 {
     // returns ONLY the fragment container that matches your page’s target
-    println!("{}",Local::now());
+    println!("uaghhh {}",Local::now());
     html! {
         @for post in posts.into_iter() {
             @if post.timestamp < Utc::now() && (tag.is_none() || post.tags.contains(&tag.unwrap_or_default().to_string())) {
