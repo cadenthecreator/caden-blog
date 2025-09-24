@@ -82,10 +82,6 @@ async fn load_file(filename: &str, cache: FileCache) -> Option<Vec<u8>> {
     Some(contents)
 }
 
-fn serialize_post(post: &Post) -> String {
-    serde_json::to_string(post).expect("Failed to serialize Post")
-}
-
 fn deserialize_post(json_data: &str,url_name: &str) -> Post {
     let mut post: Post = serde_json::from_str(json_data).expect("Failed to deserialize Post");
     post.url_name = url_name.to_string();
@@ -211,6 +207,7 @@ async fn posts(
         if let Some(p) = get_from_file(&f) { all_posts.push(p); }
     }
     let tag = params.get("tag").map(String::as_str);
+    println!("{:?}",tag);
 
     // Build fragment body
     let body = render_posts_fragment(all_posts, tz, tag);
