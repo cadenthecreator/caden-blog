@@ -11,7 +11,7 @@ use axum::http::{HeaderMap, HeaderName, HeaderValue, Response, StatusCode};
 use axum::response::{Html, IntoResponse};
 use axum::Router;
 use axum::routing::get;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Local, Utc};
 use chrono_tz::Tz;
 use maud::{html, Markup, PreEscaped, DOCTYPE};
 use serde::{Deserialize, Serialize};
@@ -180,6 +180,7 @@ where
     I: IntoIterator<Item = &'a Post>,
 {
     // returns ONLY the fragment container that matches your page’s target
+    println!("{}",Local::now());
     html! {
         @for post in posts {
             @if post.timestamp < Utc::now() && (tag.is_none() || post.tags.contains(&tag.unwrap_or_default().to_string())) {
