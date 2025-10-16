@@ -61,12 +61,19 @@ fn list_files_in_directory(dir: &str) -> Vec<String> {
 }
 
 fn render_post(post: &Post) -> Markup {
+    let mut opts = Options::default();
+    opts.extension.table = true;
+    opts.extension.autolink = true;
+    opts.extension.strikethrough = true;
+    opts.extension.tasklist = true;
+    opts.render.unsafe_ = true;
+    opts.extension.tagfilter = false;
     html! {
         div class="post" {
             h1 { (post.title) }
             p class="text-muted" { (post.timestamp.format("%b %-d, %Y %-I:%M %p %Z").to_string()) }
             div class="post-content" {
-                (markdown_to_html(&post.body,&Options::default()))
+                (markdown_to_html(&post.body,&opts))
             }
         }
     }
@@ -450,6 +457,13 @@ impl<S: Send + Sync> FromRequestParts<S> for UserTz {
 
 
 async fn post_handler(Path(url_name): Path<String>, headers: HeaderMap, UserTz(tz): UserTz) -> Html<String> {
+    let mut opts = Options::default();
+    opts.extension.table = true;
+    opts.extension.autolink = true;
+    opts.extension.strikethrough = true;
+    opts.extension.tasklist = true;
+    opts.render.unsafe_ = true;
+    opts.extension.tagfilter = false;
     let dir = format!("./caden-blog/posts/{}.json",url_name);
     let path = std::path::Path::new((&dir).into());
     let display = path.display();
@@ -619,7 +633,7 @@ code.hljs {
                 div class="background" {
                     div class="content" {
                             a href="/" class="back-btn" {"< Back"}
-                        (PreEscaped(markdown_to_html(&post.body,&Options::default())))
+                        (PreEscaped(markdown_to_html(&post.body,&opts)))
                     }
                 }
             }
